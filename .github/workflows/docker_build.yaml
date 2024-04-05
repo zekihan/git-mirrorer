@@ -35,7 +35,7 @@ jobs:
           KUBECONFIG_DATA: ${{ env.KUBE_CONFIG }}
 
       - name: Docker Login
-        uses: docker/login-action@v3.0.0
+        uses: docker/login-action@v3.1.0
         with:
           username: ${{ env.DOCKER_USERNAME }}
           password: ${{ env.DOCKER_PASSWORD }}
@@ -44,7 +44,7 @@ jobs:
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@v5.0.0
+        uses: docker/metadata-action@v5.5.1
         with:
           images: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ github.event.repository.name }}
           flavor: |
@@ -56,7 +56,7 @@ jobs:
             type=ref,event=branch,enable=${{ github.ref != format('refs/heads/{0}', 'main') }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v5.0.0
+        uses: docker/build-push-action@v5.3.0
         with:
           builder: ${{ steps.setup_builder.outputs.name }}
           context: .
