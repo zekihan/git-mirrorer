@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  git-mirrorer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.jsonc:/config.jsonc
+    restart: unless-stopped

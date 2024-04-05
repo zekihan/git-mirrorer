@@ -1,0 +1,76 @@
+name: Docker Build & Push
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOCKER_REGISTRY: docker.io
+  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+  DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+  KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+  BUILD_GIT_TOKEN: ${{ secrets.BUILD_GIT_TOKEN }}
+
+jobs:
+  build_push:
+    runs-on: [ self-hosted, linux ]
+    steps:
+      - name: Check Out The Repo
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        id: setup_builder
+        run: |
+          chmod +x .github/scripts/setup_buildx.sh
+          bash .github/scripts/setup_buildx.sh
+          vers=$(cat VERSION | tr -d '[:space:]')
+          echo "version=$vers" >> $GITHUB_OUTPUT
+        env:
+          KUBECONFIG_DATA: ${{ env.KUBE_CONFIG }}
+
+      - name: Docker Login
+        uses: docker/login-action@v3.0.0
+        with:
+          username: ${{ env.DOCKER_USERNAME }}
+          password: ${{ env.DOCKER_PASSWORD }}
+          registry: ${{ env.DOCKER_REGISTRY }}
+          logout: true
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5.0.0
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_USERNAME }}/${{ github.event.repository.name }}
+          flavor: |
+            latest=false
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}},value=${{ steps.setup_builder.outputs.version }},enable={{is_default_branch}}
+            type=semver,pattern={{version}}-${{github.run_number}},value=${{ steps.setup_builder.outputs.version }},enable={{is_default_branch}}
+            type=ref,event=branch,enable=${{ github.ref != format('refs/heads/{0}', 'main') }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5.0.0
+        with:
+          builder: ${{ steps.setup_builder.outputs.name }}
+          context: .
+          platforms: linux/amd64, linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GITHUB_TOKEN=${{env.BUILD_GIT_TOKEN}}
+
+      - name: Buildx Cleanup
+        if: always()
+        run: |
+          chmod +x .github/scripts/setup_buildx_cleanup.sh
+          bash .github/scripts/setup_buildx_cleanup.sh
+        env:
+          UUID: ${{ steps.setup_builder.outputs.UUID }}
