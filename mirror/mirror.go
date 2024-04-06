@@ -9,7 +9,7 @@ import (
 
 var quit chan bool
 
-func reconcile() {
+func Reconcile() {
 	values := config.ReadConfig().Values
 	for _, value := range values {
 		source := value.Source
@@ -23,14 +23,14 @@ func reconcile() {
 }
 
 func StartReconcileLoop() {
-	reconcile()
+	Reconcile()
 	ticker := time.NewTicker(config.ReadConfig().GetScheduleInterval())
 	quit = make(chan bool)
 	go func() {
 		for {
 			select {
 			case <-ticker.C:
-				reconcile()
+				Reconcile()
 			case <-quit:
 				ticker.Stop()
 				return

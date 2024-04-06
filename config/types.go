@@ -16,6 +16,7 @@ type Log struct {
 }
 
 type Config struct {
+	RunOnce  bool     `json:"run_once"`
 	RepoPath string   `json:"repo_path"`
 	Log      Log      `json:"log"`
 	Schedule Schedule `json:"schedule"`
@@ -24,7 +25,8 @@ type Config struct {
 }
 
 type Web struct {
-	Port int `json:"port"`
+	Port    int  `json:"port"`
+	Enabled bool `json:"enabled"`
 }
 
 type Schedule struct {

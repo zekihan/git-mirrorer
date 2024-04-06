@@ -7,26 +7,38 @@ import (
 	"github.com/zekihan/git-mirrorer/mirror"
 	"github.com/zekihan/git-mirrorer/util"
 	"net/http"
+	"time"
 )
 
 func main() {
 	cfg := config.GetConfig()
 	util.InitLogger(cfg)
 
+	if cfg.RunOnce {
+		mirror.Reconcile()
+		return
+	}
+
 	go func() {
 		mirror.StartReconcileLoop()
 	}()
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		_, err := w.Write([]byte("OK"))
+	if cfg.Web.Enabled {
+		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			_, err := w.Write([]byte("OK"))
+			if err != nil {
+				log.Error(err)
+			}
+		})
+
+		err := http.ListenAndServe(fmt.Sprintf(":%d", config.ReadConfig().Web.Port), nil)
 		if err != nil {
 			log.Error(err)
 		}
-	})
-
-	err := http.ListenAndServe(fmt.Sprintf(":%d", config.ReadConfig().Web.Port), nil)
-	if err != nil {
-		log.Error(err)
+	} else {
+		for {
+			time.Sleep(time.Hour)
+		}
 	}
 
 	mirror.StopReconcileLoop()
