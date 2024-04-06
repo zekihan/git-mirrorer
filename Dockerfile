@@ -20,7 +20,12 @@ COPY . .
 RUN make build
 
 # Copy into scratch container
-FROM scratch
+FROM golang:1.22.2-alpine
+
+WORKDIR /
+
+RUN apk add --no-cache git ca-certificates openssh-client
+
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /go/src/github.com/zekihan/git-mirrorer/tmp/bin/git-mirrorer ./
 
