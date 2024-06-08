@@ -52,7 +52,7 @@ run: build
 ## run/live: run the application with reloading on file changes
 .PHONY: run/live
 run/live:
-	go run github.com/cosmtrek/air@latest \
+	go run github.com/air-verse/air@latest \
 		--build.cmd "make build" --build.bin "${TMP_DIR}/bin/${BINARY_NAME}" --build.delay "100" \
 		--build.exclude_dir "" \
 		--build.include_ext "go, jsonc" \

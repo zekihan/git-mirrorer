@@ -35,7 +35,7 @@ jobs:
           KUBECONFIG_DATA: ${{ env.KUBE_CONFIG }}
 
       - name: Docker Login
-        uses: docker/login-action@v3.1.0
+        uses: docker/login-action@v3.2.0
         with:
           username: ${{ env.DOCKER_USERNAME }}
           password: ${{ env.DOCKER_PASSWORD }}
