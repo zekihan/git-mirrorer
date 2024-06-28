@@ -29,7 +29,7 @@ jobs:
         run: |
           chmod +x .github/scripts/setup_buildx.sh
           bash .github/scripts/setup_buildx.sh
-          vers=$(cat VERSION | tr -d '[:space:]')
+          vers=$(tr -d '[:space:]' <VERSION)
           echo "version=$vers" >> $GITHUB_OUTPUT
         env:
           KUBECONFIG_DATA: ${{ env.KUBE_CONFIG }}
@@ -56,7 +56,7 @@ jobs:
             type=ref,event=branch,enable=${{ github.ref != format('refs/heads/{0}', 'main') }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6.1.0
+        uses: docker/build-push-action@v6.2.0
         with:
           builder: ${{ steps.setup_builder.outputs.name }}
           context: .
