@@ -2,6 +2,7 @@
 MAIN_PACKAGE_PATH := ./
 BINARY_NAME := git-mirrorer
 TMP_DIR := ./tmp
+GO_EXECUTABLE := go
 
 # ==================================================================================== #
 # QUALITY CONTROL
@@ -10,17 +11,17 @@ TMP_DIR := ./tmp
 ## tidy: format code and tidy modfile
 .PHONY: tidy
 tidy:
-	go fmt ./...
-	go mod tidy -v
+	${GO_EXECUTABLE} fmt ./...
+	${GO_EXECUTABLE} mod tidy -v
 
 ## audit: run quality control checks
 .PHONY: audit
 audit:
-	go mod verify
-	go vet ./...
-	go run honnef.co/go/tools/cmd/staticcheck@latest -checks=all,-ST1000,-U1000 ./...
-	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
-	go test -race -buildvcs -vet=off ./...
+	${GO_EXECUTABLE} mod verify
+	${GO_EXECUTABLE} vet ./...
+	${GO_EXECUTABLE} run honnef.co/go/tools/cmd/staticcheck@latest -checks=all,-ST1000,-U1000 ./...
+	${GO_EXECUTABLE} run golang.org/x/vuln/cmd/govulncheck@latest ./...
+	${GO_EXECUTABLE} test -race -buildvcs -vet=off ./...
 
 
 # ==================================================================================== #
@@ -30,19 +31,19 @@ audit:
 ## test: run all tests
 .PHONY: test
 test:
-	go test -v -race -buildvcs ./...
+	${GO_EXECUTABLE} test -v -race -buildvcs ./...
 
 ## test/cover: run all tests and display coverage
 .PHONY: test/cover
 test/cover:
-	go test -v -race -buildvcs -coverprofile=${TMP_DIR}/coverage.out ./...
-	go tool cover -html=${TMP_DIR}/coverage.out
+	${GO_EXECUTABLE} test -v -race -buildvcs -coverprofile=${TMP_DIR}/coverage.out ./...
+	${GO_EXECUTABLE} tool cover -html=${TMP_DIR}/coverage.out
 
 ## build: build the application
 .PHONY: build
 build:
 	# Include additional build steps, like TypeScript, SCSS or Tailwind compilation here...
-	go build -o=${TMP_DIR}/bin/${BINARY_NAME} ${MAIN_PACKAGE_PATH}
+	${GO_EXECUTABLE} build -o=${TMP_DIR}/bin/${BINARY_NAME} ${MAIN_PACKAGE_PATH}
 
 ## run: run the  application
 .PHONY: run
@@ -52,7 +53,7 @@ run: build
 ## run/live: run the application with reloading on file changes
 .PHONY: run/live
 run/live:
-	go run github.com/air-verse/air@latest \
+	${GO_EXECUTABLE} run github.com/air-verse/air@latest \
 		--build.cmd "make build" --build.bin "${TMP_DIR}/bin/${BINARY_NAME}" --build.delay "100" \
 		--build.exclude_dir "" \
 		--build.include_ext "go, jsonc" \

@@ -1,6 +1,6 @@
 module github.com/zekihan/git-mirrorer
 
-go 1.22.4
+go 1.22.5
 
 require (
 	github.com/sirupsen/logrus v1.9.3
