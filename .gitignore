@@ -1,4 +1,4 @@
 .idea
 .credentials
 tmp
-config.jsonc
+config.yaml
