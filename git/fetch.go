@@ -7,7 +7,7 @@ import (
 
 func fetch(repoPath string) error {
 	log.Debug("Fetching repository in ", getRepoURLFromPath(repoPath))
-	err := util.RunCmdInPath(repoPath, "git", "fetch", "-p", "origin")
+	err := util.RunCmdInPath(repoPath, "git", nil, "fetch", "-p", "origin")
 	if err != nil {
 		return err
 	}

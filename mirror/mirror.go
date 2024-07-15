@@ -10,11 +10,11 @@ import (
 var quit chan bool
 
 func Reconcile() {
-	values := config.ReadConfig().Values
+	values := config.GetConfig().Values
 	for _, value := range values {
 		source := value.Source
 		for _, mirror := range value.Mirrors {
-			err := git.HandleMirror(source.URL, mirror.URL)
+			err := git.HandleMirror(source, mirror)
 			if err != nil {
 				log.Error("Error while handling mirror ", mirror.URL, ":", err)
 			}
@@ -24,7 +24,7 @@ func Reconcile() {
 
 func StartReconcileLoop() {
 	Reconcile()
-	ticker := time.NewTicker(config.ReadConfig().GetScheduleInterval())
+	ticker := time.NewTicker(config.GetConfig().Schedule.Interval)
 	quit = make(chan bool)
 	go func() {
 		for {

@@ -8,18 +8,12 @@ import (
 )
 
 func InitLogger(cfg *config.Config) {
-	logLevel, err := log.ParseLevel(cfg.Log.Level)
-	if err != nil {
-		log.Warning("Invalid log level: ", err)
-		logLevel = log.InfoLevel
-	}
-
 	rotateFileHook, err := rotatefilehook.NewRotateFileHook(rotatefilehook.RotateFileConfig{
-		Filename:   cfg.Log.Path,
+		Filename:   cfg.LogConfig.Path,
 		MaxSize:    50, // megabytes
 		MaxBackups: 3,
 		MaxAge:     28, //days
-		Level:      logLevel,
+		Level:      cfg.LogConfig.Level,
 		Formatter: &log.JSONFormatter{
 			TimestampFormat: time.RFC822,
 		},
@@ -29,7 +23,7 @@ func InitLogger(cfg *config.Config) {
 		log.Fatalf("Failed to initialize file rotate hook: %v", err)
 	}
 
-	log.SetLevel(logLevel)
+	log.SetLevel(cfg.LogConfig.Level)
 	log.SetFormatter(&log.TextFormatter{
 		ForceColors:     true,
 		FullTimestamp:   true,

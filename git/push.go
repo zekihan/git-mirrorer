@@ -7,11 +7,11 @@ import (
 
 func push(repoPath string, mirrorURL string) error {
 	log.Debug("Pushing to mirror origin in ", getRepoURLFromPath(repoPath))
-	err := util.RunCmdInPath(repoPath, "git", "remote", "set-url", "--push", "origin", mirrorURL)
+	err := util.RunCmdInPath(repoPath, "git", nil, "remote", "set-url", "--push", "origin", mirrorURL)
 	if err != nil {
 		return err
 	}
-	err = util.RunCmdInPath(repoPath, "git", "push", "--mirror")
+	err = util.RunCmdInPath(repoPath, "git", nil, "push", "--mirror")
 	if err != nil {
 		return err
 	}

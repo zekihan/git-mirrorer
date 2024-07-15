@@ -6,8 +6,11 @@ import (
 	"os/exec"
 )
 
-func RunCmd(cmd string, args ...string) error {
+func RunCmd(cmd string, env []string, args ...string) error {
 	command := exec.Command(cmd, args...)
+	if env != nil {
+		command.Env = env
+	}
 	err := runCmd(command)
 	if err != nil {
 		return err
@@ -15,8 +18,11 @@ func RunCmd(cmd string, args ...string) error {
 	return nil
 }
 
-func RunCmdInPath(cmdPath string, cmd string, args ...string) error {
+func RunCmdInPath(cmdPath string, cmd string, env []string, args ...string) error {
 	command := exec.Command(cmd, args...)
+	if env != nil {
+		command.Env = env
+	}
 	command.Dir = cmdPath
 	err := runCmd(command)
 	if err != nil {

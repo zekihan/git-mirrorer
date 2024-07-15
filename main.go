@@ -23,7 +23,7 @@ func main() {
 		mirror.StartReconcileLoop()
 	}()
 
-	if cfg.Web.Enabled {
+	if cfg.WebConfig.Enabled {
 		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			_, err := w.Write([]byte("OK"))
 			if err != nil {
@@ -31,7 +31,7 @@ func main() {
 			}
 		})
 
-		err := http.ListenAndServe(fmt.Sprintf(":%d", config.ReadConfig().Web.Port), nil)
+		err := http.ListenAndServe(fmt.Sprintf(":%d", cfg.WebConfig.Port), nil)
 		if err != nil {
 			log.Error(err)
 		}
