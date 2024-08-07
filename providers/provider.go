@@ -3,6 +3,7 @@ package providers
 import (
 	"errors"
 	"github.com/zekihan/git-mirrorer/config"
+	"github.com/zekihan/git-mirrorer/providers/gitea"
 	"github.com/zekihan/git-mirrorer/providers/github"
 	"github.com/zekihan/git-mirrorer/providers/gitlab"
 )
@@ -17,3 +18,4 @@ func (p *Provider) CreateRepo() error {
 
 var GithubProvider = github.NewProvider()
 var GitlabProvider = gitlab.NewProvider()
+var GiteaProvider = gitea.NewProvider()

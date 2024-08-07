@@ -69,6 +69,8 @@ func createRepo(repo config.GitSource) error {
 		return providers.GithubProvider.CreateRepo(repo)
 	case config.AuthTypeGitlab:
 		return providers.GitlabProvider.CreateRepo(repo)
+	case config.AuthTypeGitea:
+		return providers.GiteaProvider.CreateRepo(repo)
 	case config.AuthTypeNone:
 		return errors.New("auto create is enabled but no auth is provided")
 	default:

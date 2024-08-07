@@ -38,11 +38,13 @@ const (
 	AuthTypeNone   AuthType = "none"
 	AuthTypeGithub AuthType = "github"
 	AuthTypeGitlab AuthType = "gitlab"
+	AuthTypeGitea  AuthType = "gitea"
 )
 
 type AuthConfig struct {
 	AuthType AuthType `yaml:"type"`
 	User     string   `yaml:"user"`
+	URL      string   `yaml:"url"`
 	Token    string   `yaml:"token"`
 }
 

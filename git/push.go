@@ -1,12 +1,13 @@
 package git
 
 import (
+	"fmt"
 	log "github.com/sirupsen/logrus"
 	"github.com/zekihan/git-mirrorer/util"
 )
 
 func push(repoPath string, mirrorURL string) error {
-	log.Debug("Pushing to mirror origin in ", getRepoURLFromPath(repoPath))
+	log.Debug(fmt.Sprintf("Pushing to mirror(%s) origin in %s", mirrorURL, getRepoURLFromPath(repoPath)))
 	err := util.RunCmdInPath(repoPath, "git", nil, "remote", "set-url", "--push", "origin", mirrorURL)
 	if err != nil {
 		return err
