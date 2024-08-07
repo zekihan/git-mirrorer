@@ -1,4 +1,4 @@
-FROM golang:1.22.5-alpine AS builder
+FROM golang:1.22.6-alpine AS builder
 
 ARG GITHUB_TOKEN
 
@@ -20,7 +20,7 @@ COPY . .
 RUN make build
 
 # Copy into scratch container
-FROM golang:1.22.5-alpine
+FROM golang:1.22.6-alpine
 
 WORKDIR /
 
