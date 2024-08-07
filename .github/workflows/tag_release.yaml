@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   version:
-    runs-on: [ self-hosted, linux ]
+    runs-on: zekihan.git-mirrorer
     steps:
       - name: Check Out The Repo
         uses: actions/checkout@v4
