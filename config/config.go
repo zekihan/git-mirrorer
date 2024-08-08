@@ -15,6 +15,8 @@ import (
 	"time"
 )
 
+const defaultConfigFile = "config.yaml"
+
 var config *Config
 
 type Config struct {
@@ -117,7 +119,7 @@ func GetConfig() *Config {
 
 func GetConfigFromFile() *Config {
 	config := GetDefaultConfig()
-	file, err := os.Open("config.yaml")
+	file, err := os.Open(getConfigFilePath())
 	if err != nil {
 		log.Fatalf("Failed to open config file: %v", err)
 	}
@@ -131,6 +133,23 @@ func GetConfigFromFile() *Config {
 		log.Fatalf("Failed to parse config file: %v", err)
 	}
 	return config
+}
+
+func getConfigFilePath() string {
+	configPath := os.Getenv("CONFIG_PATH")
+	if configPath != "" {
+		return configPath
+	}
+	configDir := os.Getenv("CONFIG_DIR")
+	if configDir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			log.Fatalf("%v", err)
+		}
+		configDir = cwd
+	}
+	configPath = path.Join(configDir, defaultConfigFile)
+	return configPath
 }
 
 func GetDefaultConfig() *Config {
