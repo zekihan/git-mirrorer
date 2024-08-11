@@ -5,17 +5,18 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'VERSION'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   DOCKER_REGISTRY: docker.io
   DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
   DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
   KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
-  BUILD_GIT_TOKEN: ${{ secrets.BUILD_GIT_TOKEN }}
 
 jobs:
   build_push:
@@ -50,10 +51,13 @@ jobs:
           flavor: |
             latest=false
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}},value=${{ steps.setup_builder.outputs.version }},enable={{is_default_branch}}
-            type=semver,pattern={{version}}-${{github.run_number}},value=${{ steps.setup_builder.outputs.version }},enable={{is_default_branch}}
-            type=ref,event=branch,enable=${{ github.ref != format('refs/heads/{0}', 'main') }}
+            type=raw,value=latest
+            type=semver,pattern={{version}},value=${{ steps.setup_builder.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.setup_builder.outputs.version }}
+            type=semver,pattern={{major}},value=${{ steps.setup_builder.outputs.version }}
+            type=semver,pattern=v{{version}},value=${{ steps.setup_builder.outputs.version }}
+            type=semver,pattern=v{{major}}.{{minor}},value=${{ steps.setup_builder.outputs.version }}
+            type=semver,pattern=v{{major}},value=${{ steps.setup_builder.outputs.version }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6.6.1
@@ -61,11 +65,9 @@ jobs:
           builder: ${{ steps.setup_builder.outputs.name }}
           context: .
           platforms: linux/amd64, linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            GITHUB_TOKEN=${{env.BUILD_GIT_TOKEN}}
 
       - name: Buildx Cleanup
         if: always()
