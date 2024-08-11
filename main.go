@@ -14,6 +14,8 @@ func main() {
 	cfg := config.GetConfig()
 	util.InitLogger(cfg)
 
+	log.Infof("Starting git-mirrorer %s in %s", util.GetVersion(), util.GetEnvironment())
+
 	if cfg.RunOnce {
 		mirror.Reconcile()
 		return

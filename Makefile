@@ -42,7 +42,6 @@ test/cover:
 ## build: build the application
 .PHONY: build
 build:
-	# Include additional build steps, like TypeScript, SCSS or Tailwind compilation here...
 	${GO_EXECUTABLE} build -o=${TMP_DIR}/bin/${BINARY_NAME} ${MAIN_PACKAGE_PATH}
 
 ## run: run the  application
@@ -53,8 +52,4 @@ run: build
 ## run/live: run the application with reloading on file changes
 .PHONY: run/live
 run/live:
-	${GO_EXECUTABLE} run github.com/air-verse/air@latest \
-		--build.cmd "make build" --build.bin "${TMP_DIR}/bin/${BINARY_NAME}" --build.delay "100" \
-		--build.exclude_dir "" \
-		--build.include_ext "go, jsonc" \
-		--misc.clean_on_exit "true"
+	export GO_EXECUTABLE="${GO_EXECUTABLE}" && export TMP_DIR="${TMP_DIR}" && export BINARY_NAME="${BINARY_NAME}" && bash run_live.sh
