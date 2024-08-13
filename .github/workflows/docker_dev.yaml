@@ -55,7 +55,7 @@ jobs:
             type=raw,value={{branch}}-${{github.run_number}},enable=${{ github.ref != format('refs/heads/{0}', 'main') }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6.6.1
+        uses: docker/build-push-action@v6.7.0
         with:
           builder: ${{ steps.setup_builder.outputs.name }}
           context: .
