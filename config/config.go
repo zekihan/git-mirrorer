@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/sethvargo/go-envconfig"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
@@ -15,18 +16,21 @@ import (
 	"time"
 )
 
+const EnvKeyPrefix = "GM__"
 const defaultConfigFile = "config.yaml"
 
 var config *Config
 
+type authConfigMap map[string]AuthConfig
+
 type Config struct {
-	RunOnce    bool                  `yaml:"run_once" env:"RUN_ONCE"`
-	RepoPath   string                `yaml:"repo_path" env:"REPO_PATH"`
-	AuthConfig map[string]AuthConfig `yaml:"auth"`
-	Schedule   Schedule              `yaml:"schedule" env:", prefix=GM__SCHEDULE_"`
-	WebConfig  WebConfig             `yaml:"web" env:", prefix=GM__WEB_"`
-	LogConfig  LogConfig             `yaml:"log" env:", prefix=GM__LOG_"`
-	Values     []Value               `yaml:"values"`
+	RunOnce    bool          `yaml:"run_once" env:"RUN_ONCE"`
+	RepoPath   string        `yaml:"repo_path" env:"REPO_PATH"`
+	AuthConfig authConfigMap `yaml:"auth"`
+	Schedule   Schedule      `yaml:"schedule" env:", prefix=SCHEDULE_"`
+	WebConfig  WebConfig     `yaml:"web" env:", prefix=WEB_"`
+	LogConfig  LogConfig     `yaml:"log" env:", prefix=LOG_"`
+	Values     []Value       `yaml:"values"`
 }
 
 type Value struct {
@@ -44,10 +48,10 @@ const (
 )
 
 type AuthConfig struct {
-	AuthType AuthType `yaml:"type"`
-	User     string   `yaml:"user"`
-	URL      string   `yaml:"url"`
-	Token    string   `yaml:"token"`
+	AuthType AuthType `yaml:"type" env:"AUTH_TYPE"`
+	User     string   `yaml:"user" env:"USER"`
+	URL      string   `yaml:"url" env:"URL"`
+	Token    string   `yaml:"token" env:"TOKEN"`
 }
 
 type AutoCreateConfig struct {
@@ -102,8 +106,11 @@ func GetConfig() *Config {
 	if config == nil {
 		cfg := GetConfigFromFile()
 		ctx := context.Background()
-		if err := envconfig.Process(ctx, cfg); err != nil {
-			log.Fatal(err)
+		if err := envconfig.ProcessWith(ctx, &envconfig.Config{
+			Target:   cfg,
+			Lookuper: envconfig.PrefixLookuper(EnvKeyPrefix, envconfig.OsLookuper()),
+		}); err != nil {
+			log.Fatalf("Failed to process env config: %v", err)
 		}
 		if cfg.LogConfig.LevelStr != "" {
 			level, err := logrus.ParseLevel(cfg.LogConfig.LevelStr)
@@ -112,9 +119,26 @@ func GetConfig() *Config {
 			}
 			cfg.LogConfig.Level = level
 		}
+		cfg.AuthConfig = processAuthConfig(cfg.AuthConfig)
 		config = cfg
 	}
 	return config
+}
+
+func processAuthConfig(authConfig authConfigMap) authConfigMap {
+	newAuthConfig := make(authConfigMap)
+	for key, config := range authConfig {
+		envKey := fmt.Sprintf("%sAUTH_%s_", EnvKeyPrefix, strings.ToUpper(key))
+		ctx := context.Background()
+		if err := envconfig.ProcessWith(ctx, &envconfig.Config{
+			Target:   &config,
+			Lookuper: envconfig.PrefixLookuper(envKey, envconfig.OsLookuper()),
+		}); err != nil {
+			log.Fatalf("Failed to process auth config: %v", err)
+		}
+		newAuthConfig[key] = config
+	}
+	return newAuthConfig
 }
 
 func GetConfigFromFile() *Config {

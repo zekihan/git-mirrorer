@@ -10,10 +10,14 @@ import (
 	"time"
 )
 
-func main() {
-	cfg := config.GetConfig()
-	util.InitLogger(cfg)
+var cfg *config.Config
 
+func init() {
+	cfg = config.GetConfig()
+	util.InitLogger(cfg)
+}
+
+func main() {
 	log.Infof("Starting git-mirrorer %s in %s", util.GetVersion(), util.GetEnvironment())
 
 	if cfg.RunOnce {
