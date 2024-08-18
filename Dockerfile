@@ -10,7 +10,7 @@ RUN go mod download
 
 COPY . .
 
-RUN ./build.sh
+RUN ./scripts/build.sh
 
 # Copy into scratch container
 FROM golang:1.23.0-alpine
