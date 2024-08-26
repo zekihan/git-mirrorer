@@ -11,7 +11,6 @@ GO_EXECUTABLE := go
 ## tidy: format code and tidy modfile
 .PHONY: tidy
 tidy:
-	templ fmt ./views
 	${GO_EXECUTABLE} fmt ./...
 	${GO_EXECUTABLE} mod tidy -v
 
@@ -44,6 +43,11 @@ test/cover:
 .PHONY: build
 build:
 	export GO_EXECUTABLE="${GO_EXECUTABLE}" && export TMP_DIR="${TMP_DIR}" && export BINARY_NAME="${BINARY_NAME}" && export ENVIRONMENT="development" && export VERSION="local" && ./scripts/build.sh
+
+## build: build the application
+.PHONY: build_deps
+build_deps:
+	export GO_EXECUTABLE="${GO_EXECUTABLE}" && export TMP_DIR="${TMP_DIR}" && export BINARY_NAME="${BINARY_NAME}" && export ENVIRONMENT="development" && export VERSION="local" && ./scripts/build_deps.sh
 
 ## run: run the  application
 .PHONY: run
