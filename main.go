@@ -5,7 +5,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/zekihan/git-mirrorer/config"
 	"github.com/zekihan/git-mirrorer/mirror"
-	"github.com/zekihan/git-mirrorer/util"
+	"github.com/zekihan/git-mirrorer/utils"
 	"net/http"
 	"time"
 )
@@ -14,11 +14,11 @@ var cfg *config.Config
 
 func init() {
 	cfg = config.GetConfig()
-	util.InitLogger(cfg)
+	utils.InitLogger(cfg)
 }
 
 func main() {
-	log.Infof("Starting git-mirrorer %s in %s", util.GetVersion(), util.GetEnvironment())
+	log.Infof("Starting git-mirrorer %s in %s", utils.GetVersion(), utils.GetEnvironment())
 
 	if cfg.RunOnce {
 		mirror.Reconcile()

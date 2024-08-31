@@ -1,4 +1,4 @@
-package util
+package utils
 
 var VERSION = "local"
 var ENVIRONMENT = "development"

@@ -191,7 +191,6 @@ func GetDefaultConfig() *Config {
 		LogConfig: LogConfig{
 			Level:         logrus.WarnLevel,
 			AddMethodName: false,
-			Path:          "tmp/logs",
 		},
 		Values: []Value{},
 	}
