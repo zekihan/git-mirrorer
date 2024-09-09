@@ -16,7 +16,7 @@ RUN ./scripts/build.sh
 FROM golang:1.23.1-alpine
 WORKDIR /
 
-RUN apk add --no-cache git ca-certificates openssh-client
+RUN apk add --no-cache ca-certificates git openssh-client
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /app/tmp/bin/git-mirrorer ./
