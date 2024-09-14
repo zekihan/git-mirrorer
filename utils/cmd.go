@@ -56,7 +56,7 @@ func runCmd(command *exec.Cmd) error {
 		log.Debug("Running: \"", s, "\" output: ", stdoutStr)
 	}
 	if err = command.Wait(); err != nil {
-		log.Fatal(err)
+		return err
 	}
 	return nil
 }
