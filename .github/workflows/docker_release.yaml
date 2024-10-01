@@ -53,9 +53,11 @@ jobs:
           tags: |
             type=raw,value=latest
             type=semver,pattern={{version}},value=${{ steps.setup_builder.outputs.version }}
+            type=semver,pattern={{version}}-${{github.run_number}},value=${{ steps.setup_builder.outputs.version }}
             type=semver,pattern={{major}}.{{minor}},value=${{ steps.setup_builder.outputs.version }}
             type=semver,pattern={{major}},value=${{ steps.setup_builder.outputs.version }}
             type=semver,pattern=v{{version}},value=${{ steps.setup_builder.outputs.version }}
+            type=semver,pattern=v{{version}}-${{github.run_number}},value=${{ steps.setup_builder.outputs.version }}
             type=semver,pattern=v{{major}}.{{minor}},value=${{ steps.setup_builder.outputs.version }}
             type=semver,pattern=v{{major}},value=${{ steps.setup_builder.outputs.version }}
 
