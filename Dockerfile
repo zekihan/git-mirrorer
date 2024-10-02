@@ -1,4 +1,4 @@
-FROM golang:1.23.1 AS builder
+FROM golang:1.23.2@sha256:adee809c2d0009a4199a11a1b2618990b244c6515149fe609e2788ddf164bd10 AS builder
 WORKDIR /app
 
 COPY go.mod .
@@ -13,7 +13,7 @@ COPY . .
 RUN ./scripts/build.sh
 
 # Copy into scratch container
-FROM golang:1.23.1-alpine
+FROM golang:1.23.2-alpine@sha256:9dd2625a1ff2859b8d8b01d8f7822c0f528942fe56cfe7a1e7c38d3b8d72d679
 WORKDIR /
 
 RUN apk add --no-cache ca-certificates git openssh-client
