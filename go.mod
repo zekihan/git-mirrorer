@@ -4,7 +4,6 @@ go 1.23.2
 
 require (
 	code.gitea.io/sdk/gitea v0.19.0
-	github.com/google/go-github/v65 v65.0.0
 	github.com/google/go-github/v66 v66.0.0
 	github.com/sethvargo/go-envconfig v1.1.0
 	github.com/sirupsen/logrus v1.9.3
