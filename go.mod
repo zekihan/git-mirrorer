@@ -8,7 +8,7 @@ require (
 	github.com/sethvargo/go-envconfig v1.1.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/snowzach/rotatefilehook v0.0.0-20220211133110-53752135082d
-	github.com/xanzy/go-gitlab v0.110.0
+	github.com/xanzy/go-gitlab v0.111.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
