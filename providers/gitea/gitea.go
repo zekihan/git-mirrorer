@@ -29,21 +29,29 @@ func (p *Provider) CreateRepo(repo config.GitSource) error {
 	}
 	client := p.getClientCached(auth.Token, auth)
 	org, repoName := repo.GetOwnerEntity()
+	var repository *gitea.Repository
+	var response *gitea.Response
 	if !repo.AutoCreateConfig.IsOrg {
-		_, _, err = client.CreateRepo(gitea.CreateRepoOption{
+		repository, response, err = client.CreateRepo(gitea.CreateRepoOption{
 			Name:     repoName,
 			Private:  repo.AutoCreateConfig.Private,
 			AutoInit: false,
 		})
 	} else {
-		_, _, err = client.CreateOrgRepo(org, gitea.CreateRepoOption{
+		repository, response, err = client.CreateOrgRepo(org, gitea.CreateRepoOption{
 			Name:     repoName,
 			Private:  repo.AutoCreateConfig.Private,
 			AutoInit: false,
 		})
 	}
+	log.Debug(response)
+	log.Debug(repository)
 	if err != nil {
 		log.Error(err)
+		return err
+	}
+	if response.StatusCode != 201 {
+		return errors.New("repo could not be created")
 	}
 	for {
 		if err := p.checkIfRepoExists(repo); err == nil {
