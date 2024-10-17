@@ -16,5 +16,6 @@ func push(repoPath string, mirrorURL string) error {
 	if err != nil {
 		return err
 	}
+	log.Debug(fmt.Sprintf("Pushed to mirror(%s) origin in %s", mirrorURL, getRepoURLFromPath(repoPath)))
 	return nil
 }
