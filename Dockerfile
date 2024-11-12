@@ -13,7 +13,7 @@ COPY . .
 RUN ./scripts/build.sh
 
 # Copy into scratch container
-FROM golang:1.23.3-alpine@sha256:b4766d6a4baaa4c4cd88a3b9e0373d071e523fd8b42a3256f3f4c4a4fa887609
+FROM golang:1.23.3-alpine@sha256:25db3a0508ff009054bf467f25e1ab395fced0f93b69459dd736ae523e61c781
 WORKDIR /
 
 RUN apk add --no-cache ca-certificates git openssh-client
