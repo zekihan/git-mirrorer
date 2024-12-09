@@ -1,4 +1,4 @@
-FROM golang:1.23.3@sha256:e5ca1999e21764b1fd40cf6564ebfb7022e7a55b8c72886a9bcb697a5feac8d6 AS builder
+FROM golang:1.23.4@sha256:574185e5c6b9d09873f455a7c205ea0514bfd99738c5dc7750196403a44ed4b7 AS builder
 WORKDIR /app
 
 COPY go.mod .
@@ -13,7 +13,7 @@ COPY . .
 RUN ./scripts/build.sh
 
 # Copy into scratch container
-FROM golang:1.23.3-alpine@sha256:c694a4d291a13a9f9d94933395673494fc2cc9d4777b85df3a7e70b3492d3574 AS final
+FROM golang:1.23.4-alpine@sha256:6c5c9590f169f77c8046e45c611d3b28fe477789acd8d3762d23d4744de69812 AS final
 
 RUN adduser -D -u 25090 -h /home/git-mirrorer git-mirrorer
 
