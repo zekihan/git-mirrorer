@@ -1,0 +1,67 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+
+version: 2
+
+project_name: git-mirrorer
+
+env:
+  - ENVIRONMENT={{ if index .Env "ENVIRONMENT"  }}{{ .Env.ENVIRONMENT }}{{ else }}default{{ end }}
+
+before:
+  hooks:
+    - go fmt ./...
+    - go mod tidy
+
+builds:
+  - binary: git-mirrorer_{{.Os}}_{{.Arch}}{{ if .Arm }}_v{{.Arm}}{{ end }}
+    no_unique_dist_dir: true
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X github.com/zekihan/git-mirrorer/utils.Version={{.Version}}
+      - -X github.com/zekihan/git-mirrorer/utils.BuildDate={{.Date}}
+      - -X github.com/zekihan/git-mirrorer/utils.CommitHash={{.Commit}}
+      - -X github.com/zekihan/git-mirrorer/utils.GitTreeState={{.GitTreeState}}
+    flags:
+      - -trimpath
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - '386'
+      - arm
+      - arm64
+      - ppc64le
+      - s390x
+      - riscv64
+    goarm:
+      - '7'
+      - '6'
+    ignore:
+      - goos: darwin
+        goarch: '386'
+      - goos: openbsd
+        goarch: arm
+      - goos: openbsd
+        goarch: arm64
+      - goos: freebsd
+        goarch: arm
+      - goos: freebsd
+        goarch: arm64
+      - goos: windows
+        goarch: arm
+
+report_sizes: true
+
+changelog:
+  disable: true
+
+release:
+  disable: true
+
+metadata:
+  mod_timestamp: "{{ .CommitTimestamp }}"

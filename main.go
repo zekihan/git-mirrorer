@@ -2,23 +2,34 @@ package main
 
 import (
 	"fmt"
+	"github.com/joho/godotenv"
 	log "github.com/sirupsen/logrus"
 	"github.com/zekihan/git-mirrorer/config"
 	"github.com/zekihan/git-mirrorer/mirror"
 	"github.com/zekihan/git-mirrorer/utils"
 	"net/http"
+	"os"
 	"time"
 )
 
 var cfg *config.Config
 
 func init() {
+	envFile := ".env"
+	if f, err := os.Stat(envFile); !(os.IsNotExist(err) || f.IsDir()) {
+		err = godotenv.Load()
+		if err != nil {
+			panic("Error loading .env file")
+		}
+	}
+
 	cfg = config.GetConfig()
 	utils.InitLogger(cfg)
 }
 
 func main() {
-	log.Infof("Starting git-mirrorer %s in %s", utils.GetVersion(), utils.GetEnvironment())
+	log.Info("Starting git mirrorer server")
+	log.Infof(utils.GetStartupInfo())
 
 	if cfg.RunOnce {
 		mirror.Reconcile()

@@ -1,28 +1,20 @@
 package utils
 
-var VERSION = "local"
-var ENVIRONMENT = "development"
+import (
+	"fmt"
+)
 
-func SetVersion(version string) {
-	VERSION = version
-}
+var (
+	Version      = "dev"
+	CommitHash   = "none"
+	BuildDate    = "I don't remember exactly"
+	GitTreeState = "not a git repo"
+)
 
-func SetEnvironment(environment string) {
-	ENVIRONMENT = environment
-}
-
-func GetVersion() string {
-	return VERSION
-}
-
-func GetEnvironment() string {
-	return ENVIRONMENT
-}
-
-func IsDevelopment() bool {
-	return ENVIRONMENT == "development"
-}
-
-func IsProduction() bool {
-	return ENVIRONMENT == "PROD"
+func GetStartupInfo() string {
+	dirty := ""
+	if GitTreeState == "dirty" {
+		dirty = " (dirty)"
+	}
+	return fmt.Sprintf("Version: %s, Build Date: %s, CommitHash: %s%s", Version, BuildDate, CommitHash, dirty)
 }
