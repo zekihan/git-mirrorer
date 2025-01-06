@@ -5,7 +5,7 @@ FROM --platform=$BUILDPLATFORM busybox:1.37.0@sha256:2919d0172f7524b2d8df9e50066
 
 ARG TARGETPLATFORM
 
-COPY dist/* /usr/bin/
+COPY ./dist ./dist
 
 RUN case ${TARGETPLATFORM} in \
         "linux/amd64")    ARCH="amd64"    ;; \
@@ -14,10 +14,10 @@ RUN case ${TARGETPLATFORM} in \
         "linux/ppc64le")  ARCH="ppc64le"  ;; \
         "linux/s390x")    ARCH="s390x"    ;; \
         "linux/386")      ARCH="386"      ;; \
-        "linux/arm/v7")   ARCH="arm_v7"   ;; \
-        "linux/arm/v6")   ARCH="arm_v6"   ;; \
+        "linux/arm/v7")   ARCH="armv7"   ;; \
+        "linux/arm/v6")   ARCH="armv6"   ;; \
     esac && \
-    mv /usr/bin/git-mirrorer_linux_${ARCH} /usr/bin/git-mirrorer
+    mv ./dist/git-mirrorer_linux_${ARCH}/git-mirrorer /usr/bin/git-mirrorer
 
 FROM golang:1.23.4-alpine@sha256:6c5c9590f169f77c8046e45c611d3b28fe477789acd8d3762d23d4744de69812 AS final
 
@@ -32,7 +32,7 @@ RUN apk add --no-cache ca-certificates git openssh-client
 
 USER git-mirrorer
 
-ENTRYPOINT ["./git-mirrorer"]
+ENTRYPOINT ["git-mirrorer"]
 
 LABEL org.opencontainers.image.source="https://github.com/zekihan/git-mirrorer" \
     org.opencontainers.image.licenses="AGPL-3.0" \

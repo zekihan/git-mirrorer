@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: zekihan.git-mirrorer
+    steps:
+      - name: Check Out The Repo
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5.2.0
+        with:
+          go-version: stable
+
+      - name: Set up GoReleaser
+        uses: goreleaser/goreleaser-action@v6.1.0
+        with:
+          install-only: true
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install make
+          chmod +x .github/scripts/install_build_deps.sh
+          bash .github/scripts/install_build_deps.sh
+
+      - name: Make build
+        run: |
+          make release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

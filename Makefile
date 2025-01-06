@@ -55,8 +55,16 @@ build/release:
 
 .PHONY: run
 run: build
-	./dist/${BINARY_NAME}_${OS_INFO}_${ARCH_INFO}
+	./dist/${BINARY_NAME}_${OS_INFO}_${ARCH_INFO}/${BINARY_NAME}
 
 .PHONY: run/release
 run/release: build/release
-	./dist/${BINARY_NAME}_${OS_INFO}_${ARCH_INFO}
+	./dist/${BINARY_NAME}_${OS_INFO}_${ARCH_INFO}/${BINARY_NAME}
+
+.PHONY: release
+release:
+	goreleaser release --clean
+
+.PHONY: new_version
+new_version:
+	./scripts/new_version.sh $(VERSION)
