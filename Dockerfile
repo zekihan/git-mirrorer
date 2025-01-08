@@ -19,7 +19,7 @@ RUN case ${TARGETPLATFORM} in \
     esac && \
     mv ./dist/git-mirrorer_linux_${ARCH}/git-mirrorer /usr/bin/git-mirrorer
 
-FROM golang:1.23.4-alpine@sha256:6c5c9590f169f77c8046e45c611d3b28fe477789acd8d3762d23d4744de69812 AS final
+FROM golang:1.23.4-alpine@sha256:13aaa4b92fd4dc81683816b4b62041442e9f685deeb848897ce78c5e2fb03af7 AS final
 
 RUN adduser -D -u 25090 -h /home/git-mirrorer git-mirrorer
 
