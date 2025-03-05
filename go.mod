@@ -1,6 +1,6 @@
 module github.com/zekihan/git-mirrorer
 
-go 1.24.0
+go 1.24.1
 
 require (
 	code.gitea.io/sdk/gitea v0.20.0
