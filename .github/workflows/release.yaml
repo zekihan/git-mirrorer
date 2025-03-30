@@ -28,7 +28,7 @@ jobs:
           cache: false
 
       - name: Set up GoReleaser
-        uses: goreleaser/goreleaser-action@v6.2.1
+        uses: goreleaser/goreleaser-action@v6.3.0
         with:
           install-only: true
 
