@@ -1,6 +1,7 @@
 package mirror
 
 import (
+	"errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/zekihan/git-mirrorer/config"
 	"github.com/zekihan/git-mirrorer/git"
@@ -9,15 +10,40 @@ import (
 
 var quit chan bool
 
+const threadCount = 8
+
 func Reconcile() {
 	values := config.GetConfig().Values
-	for _, value := range values {
-		source := value.Source
-		for _, mirror := range value.Mirrors {
-			err := git.HandleMirror(source, mirror)
-			if err != nil {
-				log.Error("Error while handling mirror ", mirror.URL, ":", err)
+	if len(values) == 0 {
+		log.Info("No values to reconcile")
+		return
+	}
+	jobs := make(chan *config.Value, len(values))
+	result := make(chan error, len(values))
+	for w := 0; w < threadCount; w++ {
+		go func() {
+			for job := range jobs {
+				source := job.Source
+				errs := make([]error, 0)
+				for _, mirror := range job.Mirrors {
+					err := git.HandleMirror(source, mirror)
+					errs = append(errs, err)
+				}
+				result <- errors.Join(errs...)
 			}
+		}()
+	}
+
+	for _, job := range values {
+		jobs <- &job
+	}
+	close(jobs)
+
+	for range values {
+		res := <-result
+		if res != nil {
+			log.Errorf("Error reconciling: %v", res)
+			continue
 		}
 	}
 }
