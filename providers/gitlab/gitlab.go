@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 	log "github.com/sirupsen/logrus"
-	"github.com/xanzy/go-gitlab"
 	"github.com/zekihan/git-mirrorer/config"
+	"gitlab.com/gitlab-org/api/client-go"
 	"sync"
 )
 
