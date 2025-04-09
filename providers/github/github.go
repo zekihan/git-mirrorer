@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/google/go-github/v71/github"
 	"github.com/zekihan/git-mirrorer/config"
+	"sync"
 )
 
 type Provider struct {
@@ -17,7 +18,7 @@ func NewProvider() *Provider {
 	}
 }
 
-var clients = make(map[string]*github.Client)
+var clients = sync.Map{}
 
 func (p *Provider) CreateRepo(repo config.GitSource) error {
 	auth, err := p.getAuth(repo)
@@ -60,11 +61,15 @@ func (p *Provider) checkIfRepoExists(repo config.GitSource) error {
 }
 
 func (p *Provider) getClientCached(key string, auth *config.AuthConfig) *github.Client {
-	if client, ok := clients[key]; ok {
-		return client
+	value, ok := clients.Load(key)
+	if ok {
+		client, ok := value.(*github.Client)
+		if ok {
+			return client
+		}
 	}
 	client := github.NewClient(nil).WithAuthToken(auth.Token)
-	clients[key] = client
+	clients.Store(key, client)
 	return client
 }
 

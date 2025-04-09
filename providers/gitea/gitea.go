@@ -5,6 +5,7 @@ import (
 	"errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/zekihan/git-mirrorer/config"
+	"sync"
 )
 
 type Provider struct {
@@ -17,7 +18,7 @@ func NewProvider() *Provider {
 	}
 }
 
-var clients = make(map[string]*gitea.Client)
+var clients = sync.Map{}
 
 func (p *Provider) CreateRepo(repo config.GitSource) error {
 	auth, err := p.getAuth(repo)
@@ -79,14 +80,18 @@ func (p *Provider) checkIfRepoExists(repo config.GitSource) error {
 }
 
 func (p *Provider) getClientCached(key string, auth *config.AuthConfig) *gitea.Client {
-	if client, ok := clients[key]; ok {
-		return client
+	value, ok := clients.Load(key)
+	if ok {
+		client, ok := value.(*gitea.Client)
+		if ok {
+			return client
+		}
 	}
 	client, err := gitea.NewClient(auth.URL, gitea.SetToken(auth.Token))
 	if err != nil {
 		panic(err)
 	}
-	clients[key] = client
+	clients.Store(key, client)
 	return client
 }
 
