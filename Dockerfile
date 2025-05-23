@@ -1,7 +1,7 @@
 FROM --platform=$BUILDPLATFORM alpine:3.21.3@sha256:a8560b36e8b8210634f77d9f7f9efd7ffa463e380b75e2e74aff4511df3ef88c AS certs
 RUN apk update && apk add ca-certificates
 
-FROM --platform=$BUILDPLATFORM busybox:1.37.0@sha256:37f7b378a29ceb4c551b1b5582e27747b855bbfaa73fa11914fe0df028dc581f AS builder
+FROM --platform=$BUILDPLATFORM busybox:1.37.0@sha256:ce4f0c0a6e67a3a1469e7a8e1fe781f64ba7c652823fdf2d5eac677dd4d095d6 AS builder
 
 ARG TARGETPLATFORM
 
