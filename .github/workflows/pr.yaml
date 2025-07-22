@@ -39,5 +39,5 @@ jobs:
       - name: Build
         run: |
           make tidy
-          make build/release
+          make build/release/all
           git diff --exit-code

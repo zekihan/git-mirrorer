@@ -6,10 +6,13 @@ ARCH_INFO := $(shell uname -m | sed 's/x86_64/amd64/')
 TMP_DIR := ./tmp
 GO_EXECUTABLE := go
 
+# build: build the binary
+.PHONY: build
+build: tidy build/local
 
-# ==================================================================================== #
-# QUALITY CONTROL
-# ==================================================================================== #
+.PHONY: run
+run: build
+	./dist/${BINARY_NAME}_${OS_INFO}_${ARCH_INFO}/${BINARY_NAME}
 
 ## tidy: format code and tidy modfile
 .PHONY: tidy
@@ -26,10 +29,6 @@ audit:
 	${GO_EXECUTABLE} run golang.org/x/vuln/cmd/govulncheck@latest ./...
 	${GO_EXECUTABLE} test -race -buildvcs -vet=off ./...
 
-# ==================================================================================== #
-# DEVELOPMENT
-# ==================================================================================== #
-
 ## test: run all tests
 .PHONY: test
 test:
@@ -41,30 +40,41 @@ test/cover:
 	${GO_EXECUTABLE} test -v -race -buildvcs -coverprofile=${TMP_DIR}/coverage.out ./...
 	${GO_EXECUTABLE} tool cover -html=${TMP_DIR}/coverage.out
 
-.PHONY: build
-build:
-	goreleaser build --single-target --clean --snapshot
+# build/local: build the binary for local development
+.PHONY: build/local
+build/local:
+	goreleaser build --clean --id all --snapshot --single-target
 
+# build/all: build the binary for all platforms
 .PHONY: build/all
 build/all:
-	goreleaser build --clean --snapshot
+	goreleaser build --clean --id all --snapshot
 
+# build/docker: build the binary for docker platforms
+.PHONY: build/docker
+build/docker:
+	goreleaser build --clean --id docker --snapshot
+
+# build/release: build the binary for release
 .PHONY: build/release
-build/release:
-	goreleaser build --clean --skip=validate
+build/release: build/release/all
 
-.PHONY: run
-run: build
-	./dist/${BINARY_NAME}_${OS_INFO}_${ARCH_INFO}/${BINARY_NAME}
+# build/release/all: build the binary for release
+.PHONY: build/release/all
+build/release/all:
+	goreleaser build --clean --id all --skip=validate
 
-.PHONY: run/release
-run/release: build/release
-	./dist/${BINARY_NAME}_${OS_INFO}_${ARCH_INFO}/${BINARY_NAME}
+# build/release: build the binary for release
+.PHONY: build/release/docker
+build/release/docker:
+	goreleaser build --clean --id docker --skip=validate
 
+# release: build the binary and create a release
 .PHONY: release
 release:
 	goreleaser release --clean
 
+# new_version: create a new version
 .PHONY: new_version
 new_version:
 	./scripts/new_version.sh $(VERSION)

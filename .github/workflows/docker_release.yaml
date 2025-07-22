@@ -47,7 +47,7 @@ jobs:
 
       - name: Make build
         run: |
-          make build/release
+          make build/release/docker
 
       - name: Set up params
         id: setup_builder
