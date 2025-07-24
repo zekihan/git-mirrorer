@@ -3,7 +3,7 @@ package github
 import (
 	"context"
 	"errors"
-	"github.com/google/go-github/v73/github"
+	"github.com/google/go-github/v74/github"
 	"github.com/zekihan/git-mirrorer/config"
 	"sync"
 )
