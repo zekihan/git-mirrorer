@@ -15,7 +15,7 @@ func InitLogger(cfg *config.Config) {
 		FullTimestamp:   true,
 		TimestampFormat: time.RFC822,
 	})
-	log.SetReportCaller(config.GetConfig().LogConfig.AddMethodName)
+	log.SetReportCaller(cfg.LogConfig.AddMethodName)
 	log.SetOutput(os.Stdout)
 	if cfg.LogConfig.Path != "" {
 		AddFileHook(cfg)
