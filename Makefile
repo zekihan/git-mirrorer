@@ -37,6 +37,7 @@ test:
 ## test/cover: run all tests and display coverage
 .PHONY: test/cover
 test/cover:
+	mkdir -p ${TMP_DIR}
 	${GO_EXECUTABLE} test -v -race -buildvcs -coverprofile=${TMP_DIR}/coverage.out ./...
 	${GO_EXECUTABLE} tool cover -html=${TMP_DIR}/coverage.out
 
