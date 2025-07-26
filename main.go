@@ -29,7 +29,7 @@ func init() {
 
 func main() {
 	log.Info("Starting git mirrorer server")
-	log.Infof(utils.GetStartupInfo())
+	log.Info(utils.GetStartupInfo())
 
 	if cfg.RunOnce {
 		mirror.Reconcile()
