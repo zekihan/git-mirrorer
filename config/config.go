@@ -107,8 +107,9 @@ func GetConfig() *Config {
 		cfg := GetConfigFromFile()
 		ctx := context.Background()
 		if err := envconfig.ProcessWith(ctx, &envconfig.Config{
-			Target:   cfg,
-			Lookuper: envconfig.PrefixLookuper(EnvKeyPrefix, envconfig.OsLookuper()),
+			Target:           cfg,
+			Lookuper:         envconfig.PrefixLookuper(EnvKeyPrefix, envconfig.OsLookuper()),
+			DefaultOverwrite: true,
 		}); err != nil {
 			log.Fatalf("Failed to process env config: %v", err)
 		}
@@ -131,8 +132,9 @@ func processAuthConfig(authConfig authConfigMap) authConfigMap {
 		envKey := fmt.Sprintf("%sAUTH_%s_", EnvKeyPrefix, strings.ToUpper(key))
 		ctx := context.Background()
 		if err := envconfig.ProcessWith(ctx, &envconfig.Config{
-			Target:   &config,
-			Lookuper: envconfig.PrefixLookuper(envKey, envconfig.OsLookuper()),
+			Target:           &config,
+			Lookuper:         envconfig.PrefixLookuper(envKey, envconfig.OsLookuper()),
+			DefaultOverwrite: true,
 		}); err != nil {
 			log.Fatalf("Failed to process auth config: %v", err)
 		}
