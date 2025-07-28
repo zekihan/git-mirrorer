@@ -30,8 +30,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5.5.0
         with:
-          go-version: stable
-          cache: false
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Set up GoReleaser
         uses: goreleaser/goreleaser-action@v6.3.0
