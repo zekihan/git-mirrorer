@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"errors"
 	"github.com/zekihan/git-mirrorer/config"
 	"github.com/zekihan/git-mirrorer/providers"
@@ -21,14 +22,14 @@ func getRepoURLFromPath(repoPath string) string {
 	return splitN[1]
 }
 
-func getLatest(repo config.GitSource) error {
+func getLatest(ctx context.Context, repo config.GitSource) error {
 	if _, err := os.Stat(repo.GetRepoPath()); os.IsNotExist(err) {
-		err := clone(repo)
+		err := clone(ctx, repo)
 		if err != nil {
 			return err
 		}
 	} else {
-		err = fetch(repo.GetRepoPath())
+		err = fetch(ctx, repo.GetRepoPath())
 		if err != nil {
 			return err
 		}
@@ -36,41 +37,41 @@ func getLatest(repo config.GitSource) error {
 	return nil
 }
 
-func HandleMirror(source config.GitSource, mirror config.GitSource) error {
+func HandleMirror(ctx context.Context, source config.GitSource, mirror config.GitSource) error {
 	if source.URL == mirror.URL {
 		return nil
 	}
 
 	if mirror.AutoCreateConfig.Enabled {
-		err := createRepo(mirror)
+		err := createRepo(ctx, mirror)
 		if err != nil {
 			return err
 		}
 	}
 
-	err := getLatest(source)
+	err := getLatest(ctx, source)
 	if err != nil {
 		return err
 	}
-	err = push(source.GetRepoPath(), mirror.URL)
+	err = push(ctx, source.GetRepoPath(), mirror.URL)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func createRepo(repo config.GitSource) error {
+func createRepo(ctx context.Context, repo config.GitSource) error {
 	auth, ok := repo.AutoCreateConfig.GetAuth()
 	if !ok {
 		return errors.New("auto create is enabled but no auth is provided")
 	}
 	switch auth.AuthType {
 	case config.AuthTypeGithub:
-		return providers.GithubProvider.CreateRepo(repo)
+		return providers.GithubProvider.CreateRepo(ctx, repo)
 	case config.AuthTypeGitlab:
-		return providers.GitlabProvider.CreateRepo(repo)
+		return providers.GitlabProvider.CreateRepo(ctx, repo)
 	case config.AuthTypeGitea:
-		return providers.GiteaProvider.CreateRepo(repo)
+		return providers.GiteaProvider.CreateRepo(ctx, repo)
 	case config.AuthTypeNone:
 		return errors.New("auto create is enabled but no auth is provided")
 	default:

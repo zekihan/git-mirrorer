@@ -20,12 +20,12 @@ func NewProvider() *Provider {
 
 var clients = sync.Map{}
 
-func (p *Provider) CreateRepo(repo config.GitSource) error {
+func (p *Provider) CreateRepo(ctx context.Context, repo config.GitSource) error {
 	auth, err := p.getAuth(repo)
 	if err != nil {
 		return err
 	}
-	if err := p.checkIfRepoExists(repo); err == nil {
+	if err := p.checkIfRepoExists(ctx, repo); err == nil {
 		return err
 	}
 	client := p.getClientCached(auth.Token, auth)
@@ -33,7 +33,7 @@ func (p *Provider) CreateRepo(repo config.GitSource) error {
 	if !repo.AutoCreateConfig.IsOrg {
 		org = ""
 	}
-	_, _, err = client.Repositories.Create(context.Background(), org, &github.Repository{
+	_, _, err = client.Repositories.Create(ctx, org, &github.Repository{
 		Name:    github.String(repoName),
 		Private: github.Bool(repo.AutoCreateConfig.Private),
 	})
@@ -43,14 +43,14 @@ func (p *Provider) CreateRepo(repo config.GitSource) error {
 	return nil
 }
 
-func (p *Provider) checkIfRepoExists(repo config.GitSource) error {
+func (p *Provider) checkIfRepoExists(ctx context.Context, repo config.GitSource) error {
 	auth, err := p.getAuth(repo)
 	if err != nil {
 		return err
 	}
 	client := p.getClientCached(auth.Token, auth)
 	owner, repoName := repo.GetOwnerEntity()
-	_, res, err := client.Repositories.Get(context.Background(), owner, repoName)
+	_, res, err := client.Repositories.Get(ctx, owner, repoName)
 	if err != nil {
 		return err
 	}

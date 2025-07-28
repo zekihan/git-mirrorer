@@ -1,6 +1,7 @@
 package mirror
 
 import (
+	"context"
 	"errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/zekihan/git-mirrorer/config"
@@ -12,7 +13,7 @@ var quit chan bool
 
 const threadCount = 8
 
-func Reconcile() {
+func Reconcile(ctx context.Context) {
 	values := config.GetConfig().Values
 	if len(values) == 0 {
 		log.Info("No values to reconcile")
@@ -26,7 +27,7 @@ func Reconcile() {
 				source := job.Source
 				errs := make([]error, 0)
 				for _, mirror := range job.Mirrors {
-					err := git.HandleMirror(source, mirror)
+					err := git.HandleMirror(ctx, source, mirror)
 					errs = append(errs, err)
 				}
 				result <- errors.Join(errs...)
@@ -49,16 +50,18 @@ func Reconcile() {
 }
 
 func StartReconcileLoop() {
-	Reconcile()
+	ctx, cancel := context.WithCancel(context.Background())
+	Reconcile(ctx)
 	ticker := time.NewTicker(config.GetConfig().Schedule.Interval)
 	quit = make(chan bool)
 	go func() {
 		for {
 			select {
 			case <-ticker.C:
-				Reconcile()
+				Reconcile(ctx)
 			case <-quit:
 				ticker.Stop()
+				cancel()
 				return
 			}
 		}

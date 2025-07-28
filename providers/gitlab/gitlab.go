@@ -1,6 +1,7 @@
 package gitlab
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	log "github.com/sirupsen/logrus"
@@ -21,12 +22,12 @@ func NewProvider() *Provider {
 
 var clients = sync.Map{}
 
-func (p *Provider) CreateRepo(repo config.GitSource) error {
+func (p *Provider) CreateRepo(ctx context.Context, repo config.GitSource) error {
 	auth, err := p.getAuth(repo)
 	if err != nil {
 		return err
 	}
-	if err := p.checkIfRepoExists(repo); err == nil {
+	if err := p.checkIfRepoExists(ctx, repo); err == nil {
 		return err
 	}
 	client := p.getClientCached(auth.Token, auth)
@@ -45,20 +46,20 @@ func (p *Provider) CreateRepo(repo config.GitSource) error {
 		log.Error(err)
 	}
 	for {
-		if err := p.checkIfRepoExists(repo); err == nil {
+		if err := p.checkIfRepoExists(ctx, repo); err == nil {
 			break
 		}
 	}
-	if p.ProtectBranch(repo, "main") != nil {
+	if p.ProtectBranch(ctx, repo, "main") != nil {
 		log.Error("failed to protect branch")
 	}
-	if p.ProtectBranch(repo, "master") != nil {
+	if p.ProtectBranch(ctx, repo, "master") != nil {
 		log.Error("failed to protect branch")
 	}
 	return nil
 }
 
-func (p *Provider) ProtectBranch(repo config.GitSource, branch string) error {
+func (p *Provider) ProtectBranch(ctx context.Context, repo config.GitSource, branch string) error {
 	auth, err := p.getAuth(repo)
 	if err != nil {
 		return err
@@ -81,7 +82,7 @@ func (p *Provider) ProtectBranch(repo config.GitSource, branch string) error {
 	return nil
 }
 
-func (p *Provider) checkIfRepoExists(repo config.GitSource) error {
+func (p *Provider) checkIfRepoExists(ctx context.Context, repo config.GitSource) error {
 	auth, err := p.getAuth(repo)
 	if err != nil {
 		return err

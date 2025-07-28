@@ -120,17 +120,16 @@ func GetConfig() *Config {
 			}
 			cfg.LogConfig.Level = level
 		}
-		cfg.AuthConfig = processAuthConfig(cfg.AuthConfig)
+		cfg.AuthConfig = processAuthConfig(ctx, cfg.AuthConfig)
 		config = cfg
 	}
 	return config
 }
 
-func processAuthConfig(authConfig authConfigMap) authConfigMap {
+func processAuthConfig(ctx context.Context, authConfig authConfigMap) authConfigMap {
 	newAuthConfig := make(authConfigMap)
 	for key, config := range authConfig {
 		envKey := fmt.Sprintf("%sAUTH_%s_", EnvKeyPrefix, strings.ToUpper(key))
-		ctx := context.Background()
 		if err := envconfig.ProcessWith(ctx, &envconfig.Config{
 			Target:           &config,
 			Lookuper:         envconfig.PrefixLookuper(envKey, envconfig.OsLookuper()),

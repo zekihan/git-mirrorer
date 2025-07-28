@@ -2,6 +2,7 @@ package gitea
 
 import (
 	"code.gitea.io/sdk/gitea"
+	"context"
 	"errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/zekihan/git-mirrorer/config"
@@ -20,12 +21,12 @@ func NewProvider() *Provider {
 
 var clients = sync.Map{}
 
-func (p *Provider) CreateRepo(repo config.GitSource) error {
+func (p *Provider) CreateRepo(ctx context.Context, repo config.GitSource) error {
 	auth, err := p.getAuth(repo)
 	if err != nil {
 		return err
 	}
-	if err := p.checkIfRepoExists(repo); err == nil {
+	if err := p.checkIfRepoExists(ctx, repo); err == nil {
 		return err
 	}
 	client := p.getClientCached(auth.Token, auth)
@@ -55,14 +56,14 @@ func (p *Provider) CreateRepo(repo config.GitSource) error {
 		return errors.New("repo could not be created")
 	}
 	for {
-		if err := p.checkIfRepoExists(repo); err == nil {
+		if err := p.checkIfRepoExists(ctx, repo); err == nil {
 			break
 		}
 	}
 	return nil
 }
 
-func (p *Provider) checkIfRepoExists(repo config.GitSource) error {
+func (p *Provider) checkIfRepoExists(ctx context.Context, repo config.GitSource) error {
 	auth, err := p.getAuth(repo)
 	if err != nil {
 		return err

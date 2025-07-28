@@ -18,10 +18,10 @@ builds:
       - CGO_ENABLED=0
     ldflags: &ldflags
       - -s -w
-      - -X github.com/zekihan/{{ .ProjectName }}/utils.Version={{.Version}}
-      - -X github.com/zekihan/{{ .ProjectName }}/utils.BuildDate={{.CommitTimestamp}}
-      - -X github.com/zekihan/{{ .ProjectName }}/utils.CommitHash={{.Commit}}
-      - -X github.com/zekihan/{{ .ProjectName }}/utils.GitTreeState={{.GitTreeState}}
+      - -X github.com/zekihan/go-commons/utils.Version={{.Version}}
+      - -X github.com/zekihan/go-commons/utils.BuildDate={{.CommitTimestamp}}
+      - -X github.com/zekihan/go-commons/utils.CommitHash={{.Commit}}
+      - -X github.com/zekihan/go-commons/utils.GitTreeState={{.GitTreeState}}
     flags: &flags
       - -trimpath
     goos:
