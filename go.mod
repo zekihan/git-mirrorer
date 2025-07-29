@@ -7,7 +7,7 @@ require (
 	github.com/google/go-github/v74 v74.0.0
 	github.com/sethvargo/go-envconfig v1.3.0
 	github.com/sirupsen/logrus v1.9.3
-	github.com/zekihan/go-commons v0.1.2
+	github.com/zekihan/go-commons v0.1.4
 	gitlab.com/gitlab-org/api/client-go v0.137.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -22,6 +22,8 @@ require (
 	github.com/hashicorp/go-version v1.7.0 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/snowzach/rotatefilehook v0.0.0-20220211133110-53752135082d // indirect
+	github.com/tdewolff/minify/v2 v2.23.10 // indirect
+	github.com/tdewolff/parse/v2 v2.8.1 // indirect
 	golang.org/x/crypto v0.40.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
