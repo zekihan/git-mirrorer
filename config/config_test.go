@@ -1,0 +1,172 @@
+package config
+
+import (
+	"os"
+	"path"
+	"testing"
+	"time"
+
+	"github.com/sirupsen/logrus"
+)
+
+func TestGetDefaultConfig(t *testing.T) {
+	cfg := GetDefaultConfig()
+	if cfg.RunOnce != false {
+		t.Errorf("expected RunOnce to be false, got %v", cfg.RunOnce)
+	}
+	if cfg.RepoPath != "tmp/repos" {
+		t.Errorf("expected RepoPath to be 'tmp/repos', got %v", cfg.RepoPath)
+	}
+	if cfg.Schedule.Interval != 15*time.Minute {
+		t.Errorf("expected Schedule.Interval to be 15m, got %v", cfg.Schedule.Interval)
+	}
+	if cfg.WebConfig.Port != 8080 {
+		t.Errorf("expected WebConfig.Port to be 8080, got %v", cfg.WebConfig.Port)
+	}
+	if cfg.LogConfig.Level != logrus.WarnLevel {
+		t.Errorf("expected LogConfig.Level to be WarnLevel, got %v", cfg.LogConfig.Level)
+	}
+}
+
+func TestGitSource_Valid(t *testing.T) {
+	gs := &GitSource{URL: ""}
+	valid, err := gs.Valid()
+	if valid || err == nil {
+		t.Errorf("expected invalid GitSource with empty URL")
+	}
+	gs.URL = "https://github.com/user/repo.git"
+	valid, err = gs.Valid()
+	if !valid || err != nil {
+		t.Errorf("expected valid GitSource, got error: %v", err)
+	}
+}
+
+func TestConfig_Valid(t *testing.T) {
+	cfg := GetDefaultConfig()
+	cfg.Values = []Value{
+		{
+			Source:  GitSource{URL: ""},
+			Mirrors: []GitSource{{URL: ""}},
+		},
+	}
+	valid, err := cfg.Valid()
+	if valid || err == nil {
+		t.Errorf("expected invalid config due to empty URLs")
+	}
+	cfg.Values = []Value{
+		{
+			Source:  GitSource{URL: "https://github.com/user/repo.git"},
+			Mirrors: []GitSource{{URL: "https://gitlab.com/user/repo.git"}},
+		},
+	}
+	valid, err = cfg.Valid()
+	if !valid || err != nil {
+		t.Errorf("expected valid config, got error: %v", err)
+	}
+}
+
+func TestGitSource_GetRepoPath(t *testing.T) {
+	cfg := GetDefaultConfig()
+	cfg.RepoPath = "/tmp/testrepos"
+	config = cfg // set global config for test
+	gs := &GitSource{URL: "https://github.com/user/repo.git"}
+	expected := path.Join(cfg.RepoPath, "https:%2F%2Fgithub.com%2Fuser%2Frepo.git")
+	got := gs.GetRepoPath()
+	if got != expected {
+		t.Errorf("expected %v, got %v", expected, got)
+	}
+}
+
+func TestGitSource_GetOwnerEntity(t *testing.T) {
+	gs := &GitSource{URL: "git@github.com:user/repo.git"}
+	owner, repo := gs.GetOwnerEntity()
+	if owner != "user" || repo != "repo" {
+		t.Errorf("expected owner 'user' and repo 'repo', got '%s' and '%s'", owner, repo)
+	}
+}
+
+func TestGetConfigFilePath(t *testing.T) {
+	// Backup and restore env vars
+	origConfigPath := os.Getenv("CONFIG_PATH")
+	origConfigDir := os.Getenv("CONFIG_DIR")
+	defer func() {
+		os.Setenv("CONFIG_PATH", origConfigPath)
+		os.Setenv("CONFIG_DIR", origConfigDir)
+	}()
+
+	os.Setenv("CONFIG_PATH", "/tmp/myconfig.yaml")
+	if got := getConfigFilePath(); got != "/tmp/myconfig.yaml" {
+		t.Errorf("expected /tmp/myconfig.yaml, got %v", got)
+	}
+	os.Unsetenv("CONFIG_PATH")
+	os.Setenv("CONFIG_DIR", "/tmp/mydir")
+	expected := path.Join("/tmp/mydir", defaultConfigFile)
+	if got := getConfigFilePath(); got != expected {
+		t.Errorf("expected %v, got %v", expected, got)
+	}
+	os.Unsetenv("CONFIG_DIR")
+	wd, _ := os.Getwd()
+	expected = path.Join(wd, defaultConfigFile)
+	if got := getConfigFilePath(); got != expected {
+		t.Errorf("expected %v, got %v", expected, got)
+	}
+}
+
+func TestGetConfig_EnvOverrideAndLogLevel(t *testing.T) {
+	origConfigPath := os.Getenv("CONFIG_PATH")
+	defer os.Setenv("CONFIG_PATH", origConfigPath)
+	tmpfile, err := os.CreateTemp("", "goodconfig*.yaml")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpfile.Name())
+	tmpfile.WriteString("log:\n  level: info\n")
+	tmpfile.Close()
+	os.Setenv("CONFIG_PATH", tmpfile.Name())
+	os.Setenv("GM__LOG_LEVEL", "error")
+	os.Setenv("GM__WEB_PORT", "1234")
+	config = nil // reset global config
+	cfg := GetConfig()
+	if cfg.LogConfig.Level != logrus.ErrorLevel {
+		t.Errorf("expected log level error, got %v", cfg.LogConfig.Level)
+	}
+	if cfg.WebConfig.Port != 1234 {
+		t.Errorf("expected web port 1234, got %v", cfg.WebConfig.Port)
+	}
+}
+
+func TestGitSource_Valid_NonEmptyURL(t *testing.T) {
+	gs := &GitSource{URL: "ssh://git@github.com/user/repo.git"}
+	valid, err := gs.Valid()
+	if !valid || err != nil {
+		t.Errorf("expected valid GitSource, got error: %v", err)
+	}
+}
+
+func TestConfig_Valid_MultipleValues(t *testing.T) {
+	cfg := GetDefaultConfig()
+	cfg.Values = []Value{
+		{
+			Source:  GitSource{URL: "https://github.com/user/repo1.git"},
+			Mirrors: []GitSource{{URL: "https://gitlab.com/user/repo1.git"}, {URL: "https://bitbucket.org/user/repo1.git"}},
+		},
+		{
+			Source:  GitSource{URL: "https://github.com/user/repo2.git"},
+			Mirrors: []GitSource{{URL: "https://gitlab.com/user/repo2.git"}},
+		},
+	}
+	valid, err := cfg.Valid()
+	if !valid || err != nil {
+		t.Errorf("expected valid config, got error: %v", err)
+	}
+}
+
+func TestGitSource_GetOwnerEntity_InvalidFormat(t *testing.T) {
+	gs := &GitSource{URL: "invalidurl"}
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic on invalid url format")
+		}
+	}()
+	gs.GetOwnerEntity()
+}
