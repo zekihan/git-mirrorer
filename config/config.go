@@ -3,7 +3,6 @@ package config
 import (
 	"context"
 	"errors"
-	"fmt"
 	"github.com/sethvargo/go-envconfig"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
@@ -21,16 +20,13 @@ const defaultConfigFile = "config.yaml"
 
 var config *Config
 
-type authConfigMap map[string]AuthConfig
-
 type Config struct {
-	RunOnce    bool          `yaml:"run_once" env:"RUN_ONCE"`
-	RepoPath   string        `yaml:"repo_path" env:"REPO_PATH"`
-	AuthConfig authConfigMap `yaml:"auth"`
-	Schedule   Schedule      `yaml:"schedule" env:", prefix=SCHEDULE_"`
-	WebConfig  WebConfig     `yaml:"web" env:", prefix=WEB_"`
-	LogConfig  LogConfig     `yaml:"log" env:", prefix=LOG_"`
-	Values     []Value       `yaml:"values"`
+	RunOnce   bool      `yaml:"run_once" env:"RUN_ONCE"`
+	RepoPath  string    `yaml:"repo_path" env:"REPO_PATH"`
+	Schedule  Schedule  `yaml:"schedule" env:", prefix=SCHEDULE_"`
+	WebConfig WebConfig `yaml:"web" env:", prefix=WEB_"`
+	LogConfig LogConfig `yaml:"log" env:", prefix=LOG_"`
+	Values    []Value   `yaml:"values"`
 }
 
 type Value struct {
@@ -38,40 +34,8 @@ type Value struct {
 	Mirrors []GitSource `yaml:"mirrors"`
 }
 
-type AuthType string
-
-const (
-	AuthTypeNone   AuthType = "none"
-	AuthTypeGithub AuthType = "github"
-	AuthTypeGitlab AuthType = "gitlab"
-	AuthTypeGitea  AuthType = "gitea"
-)
-
-type AuthConfig struct {
-	AuthType AuthType `yaml:"type" env:"AUTH_TYPE"`
-	User     string   `yaml:"user" env:"USER"`
-	URL      string   `yaml:"url" env:"URL"`
-	Token    string   `yaml:"token" env:"TOKEN"`
-}
-
-type AutoCreateConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Auth    string `yaml:"auth"`
-	Private bool   `yaml:"private"`
-	IsOrg   bool   `yaml:"is_org"`
-}
-
-func (a *AutoCreateConfig) GetAuth() (AuthConfig, bool) {
-	if a.Auth == "" {
-		return AuthConfig{}, false
-	}
-	auth, ok := GetConfig().AuthConfig[a.Auth]
-	return auth, ok
-}
-
 type GitSource struct {
-	URL              string           `yaml:"url"`
-	AutoCreateConfig AutoCreateConfig `yaml:"auto_create"`
+	URL string `yaml:"url"`
 }
 
 func (g *GitSource) GetRepoPath() string {
@@ -120,26 +84,9 @@ func GetConfig() *Config {
 			}
 			cfg.LogConfig.Level = level
 		}
-		cfg.AuthConfig = processAuthConfig(ctx, cfg.AuthConfig)
 		config = cfg
 	}
 	return config
-}
-
-func processAuthConfig(ctx context.Context, authConfig authConfigMap) authConfigMap {
-	newAuthConfig := make(authConfigMap)
-	for key, config := range authConfig {
-		envKey := fmt.Sprintf("%sAUTH_%s_", EnvKeyPrefix, strings.ToUpper(key))
-		if err := envconfig.ProcessWith(ctx, &envconfig.Config{
-			Target:           &config,
-			Lookuper:         envconfig.PrefixLookuper(envKey, envconfig.OsLookuper()),
-			DefaultOverwrite: true,
-		}); err != nil {
-			log.Fatalf("Failed to process auth config: %v", err)
-		}
-		newAuthConfig[key] = config
-	}
-	return newAuthConfig
 }
 
 func GetConfigFromFile() *Config {
