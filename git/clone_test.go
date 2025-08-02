@@ -1,18 +1,18 @@
 package git
 
 import (
-	"context"
-	"github.com/zekihan/git-mirrorer/config"
 	"testing"
+
+	"github.com/zekihan/git-mirrorer/config"
 )
 
 func Test_clone(t *testing.T) {
 	setupRepos(t)
 
 	type args struct {
-		ctx  context.Context
 		repo config.GitSource
 	}
+
 	tests := []struct {
 		name    string
 		args    args
@@ -21,7 +21,6 @@ func Test_clone(t *testing.T) {
 		{
 			name: "Clone valid repository",
 			args: args{
-				ctx:  t.Context(),
 				repo: config.GetConfig().Values[0].Source,
 			},
 			wantErr: false,
@@ -29,7 +28,6 @@ func Test_clone(t *testing.T) {
 		{
 			name: "Clone invalid repository",
 			args: args{
-				ctx: t.Context(),
 				repo: config.GitSource{
 					URL: "invalid-url",
 				},
@@ -39,7 +37,8 @@ func Test_clone(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := clone(tt.args.ctx, tt.args.repo); (err != nil) != tt.wantErr {
+			err := clone(t.Context(), tt.args.repo)
+			if (err != nil) != tt.wantErr {
 				t.Errorf("clone() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})

@@ -20,6 +20,13 @@ tidy:
 	${GO_EXECUTABLE} fmt ./...
 	${GO_EXECUTABLE} mod tidy -v
 
+## lint: run linter
+.PHONY: lint
+lint: tidy
+	golangci-lint fmt
+	golangci-lint run --fix > /dev/null 2>&1 || true
+	golangci-lint run
+
 ## audit: run quality control checks
 .PHONY: audit
 audit: tidy

@@ -1,11 +1,13 @@
 package git
 
 import (
-	"github.com/zekihan/git-mirrorer/config"
-	"github.com/zekihan/go-commons/utils"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/zekihan/go-commons/utils"
+
+	"github.com/zekihan/git-mirrorer/config"
 )
 
 func setupRepos(t *testing.T) {
@@ -35,48 +37,7 @@ func setupRepos(t *testing.T) {
 
 	for _, repo := range repos {
 		remote := "remote0"
-		repoPath := paths[remote][repo]
-		err := os.MkdirAll(repoPath, 0o600)
-		if err != nil {
-			t.Fatalf("Failed to create repository directory %s: %v", repoPath, err)
-		}
-		err = utils.RunCmdInPath(t.Context(), repoPath, "git", nil, "init")
-		if err != nil {
-			t.Fatalf("Failed to initialize git repository %s: %v", repoPath, err)
-		}
-		err = utils.RunCmdInPath(t.Context(), repoPath, "git", nil, "config", "user.email", "you@example.com")
-		if err != nil {
-			t.Fatalf("Failed to set global git user email: %v", err)
-		}
-		err = utils.RunCmdInPath(t.Context(), repoPath, "git", nil, "config", "user.name", "Your Name")
-		if err != nil {
-			t.Fatalf("Failed to set global git user name: %v", err)
-		}
-		err = utils.RunCmdInPath(t.Context(), repoPath, "git", nil, "config", "init.defaultBranch", "main")
-		if err != nil {
-			t.Fatalf("Failed to set global git default branch: %v", err)
-		}
-		err = utils.RunCmdInPath(t.Context(), repoPath, "git", nil, "remote", "add", remote, "https://example.com/"+repo+"/"+remote+".git")
-		if err != nil {
-			t.Fatalf("Failed to add remote %s to repository %s: %v", remote, repoPath, err)
-		}
-		err = utils.RunCmdInPath(t.Context(), repoPath, "git", nil, "commit", "--allow-empty", "-m", "Initial commit")
-		if err != nil {
-			t.Fatalf("Failed to create initial commit in repository %s: %v", repoPath, err)
-		}
-		filePath := filepath.Join(repoPath, "file.txt")
-		err = os.WriteFile(filePath, []byte("Hello, World!"), 0o600)
-		if err != nil {
-			t.Fatalf("Failed to create file in repository %s: %v", repoPath, err)
-		}
-		err = utils.RunCmdInPath(t.Context(), repoPath, "git", nil, "add", filePath)
-		if err != nil {
-			t.Fatalf("Failed to add file to repository %s: %v", repoPath, err)
-		}
-		err = utils.RunCmdInPath(t.Context(), repoPath, "git", nil, "commit", "-m", "Add file.txt")
-		if err != nil {
-			t.Fatalf("Failed to commit file in repository %s: %v", repoPath, err)
-		}
+		setupRemoteRepo(t, paths, remote, repo)
 	}
 
 	cfg := config.GetConfig()
@@ -92,14 +53,125 @@ func setupRepos(t *testing.T) {
 		}
 		for _, remote := range remotes {
 			repoPath := paths[remote][repo]
-			err := utils.RunCmdInPath(t.Context(), repoPath, "git", nil, "clone", paths["remote0"][repo], ".")
+
+			err := utils.RunCmdInPath(
+				t.Context(),
+				repoPath,
+				"git",
+				nil,
+				"clone",
+				paths["remote0"][repo],
+				".",
+			)
 			if err != nil {
 				t.Fatalf("Failed to clone repository %s from remote %s: %v", repo, remote, err)
 			}
+
 			val.Mirrors = append(val.Mirrors, config.GitSource{
 				URL: repoPath,
 			})
 		}
+
 		cfg.Values = append(cfg.Values, val)
+	}
+}
+
+func setupRemoteRepo(t *testing.T, paths map[string]map[string]string, remote, repo string) {
+	t.Helper()
+
+	repoPath := paths[remote][repo]
+
+	err := os.MkdirAll(repoPath, 0o600)
+	if err != nil {
+		t.Fatalf("Failed to create repository directory %s: %v", repoPath, err)
+	}
+
+	err = utils.RunCmdInPath(t.Context(), repoPath, "git", nil, "init")
+	if err != nil {
+		t.Fatalf("Failed to initialize git repository %s: %v", repoPath, err)
+	}
+
+	err = utils.RunCmdInPath(
+		t.Context(),
+		repoPath,
+		"git",
+		nil,
+		"config",
+		"user.email",
+		"you@example.com",
+	)
+	if err != nil {
+		t.Fatalf("Failed to set global git user email: %v", err)
+	}
+
+	err = utils.RunCmdInPath(
+		t.Context(),
+		repoPath,
+		"git",
+		nil,
+		"config",
+		"user.name",
+		"Your Name",
+	)
+	if err != nil {
+		t.Fatalf("Failed to set global git user name: %v", err)
+	}
+
+	err = utils.RunCmdInPath(
+		t.Context(),
+		repoPath,
+		"git",
+		nil,
+		"config",
+		"init.defaultBranch",
+		"main",
+	)
+	if err != nil {
+		t.Fatalf("Failed to set global git default branch: %v", err)
+	}
+
+	err = utils.RunCmdInPath(
+		t.Context(),
+		repoPath,
+		"git",
+		nil,
+		"remote",
+		"add",
+		remote,
+		"https://example.com/"+repo+"/"+remote+".git",
+	)
+	if err != nil {
+		t.Fatalf("Failed to add remote %s to repository %s: %v", remote, repoPath, err)
+	}
+
+	err = utils.RunCmdInPath(
+		t.Context(),
+		repoPath,
+		"git",
+		nil,
+		"commit",
+		"--allow-empty",
+		"-m",
+		"Initial commit",
+	)
+	if err != nil {
+		t.Fatalf("Failed to create initial commit in repository %s: %v", repoPath, err)
+	}
+
+	filePath := filepath.Join(repoPath, "file.txt")
+
+	err = os.WriteFile(filePath, []byte("Hello, World!"), 0o600)
+	if err != nil {
+		t.Fatalf("Failed to create file in repository %s: %v", repoPath, err)
+	}
+
+	err = utils.RunCmdInPath(t.Context(), repoPath, "git", nil, "add", filePath)
+	if err != nil {
+		t.Fatalf("Failed to add file to repository %s: %v", repoPath, err)
+	}
+
+	err = utils.RunCmdInPath(t.Context(), repoPath, "git", nil, "commit", "-m", "Add file.txt")
+	if err != nil {
+		t.Fatalf("Failed to commit file in repository %s: %v", repoPath, err)
 	}
 }

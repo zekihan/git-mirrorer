@@ -1,11 +1,10 @@
+//nolint:forbidigo // This package configures log packages.
 package config
 
 import (
 	"context"
 	"errors"
-	"github.com/sethvargo/go-envconfig"
-	"github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v3"
+	"fmt"
 	"io"
 	"log"
 	"net/url"
@@ -13,20 +12,31 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"github.com/sethvargo/go-envconfig"
+	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v3"
 )
 
-const EnvKeyPrefix = "GM__"
-const defaultConfigFile = "config.yaml"
+const (
+	EnvKeyPrefix      = "GM__"
+	defaultConfigFile = "config.yaml"
+	defaultInterval   = 15 * time.Minute
+	defaultPort       = 8080
+)
 
-var config *Config
+var (
+	config           *Config
+	errURLIsRequired = errors.New("url is required")
+)
 
 type Config struct {
-	RunOnce   bool      `yaml:"run_once" env:"RUN_ONCE"`
-	RepoPath  string    `yaml:"repo_path" env:"REPO_PATH"`
-	Schedule  Schedule  `yaml:"schedule" env:", prefix=SCHEDULE_"`
-	WebConfig WebConfig `yaml:"web" env:", prefix=WEB_"`
-	LogConfig LogConfig `yaml:"log" env:", prefix=LOG_"`
+	RepoPath  string    `yaml:"repoPath" env:"REPO_PATH"`
+	LogConfig LogConfig `yaml:"log"      env:", prefix=LOG_"`
 	Values    []Value   `yaml:"values"`
+	WebConfig WebConfig `yaml:"web"      env:", prefix=WEB_"`
+	Schedule  Schedule  `yaml:"schedule" env:", prefix=SCHEDULE_"`
+	RunOnce   bool      `yaml:"runOnce"  env:"RUN_ONCE"`
 }
 
 type Value struct {
@@ -46,13 +56,14 @@ func (g *GitSource) GetOwnerEntity() (string, string) {
 	parts := strings.Split(g.URL, ".git")
 	parts = strings.Split(parts[0], ":")
 	parts = strings.Split(parts[1], "/")
+
 	return parts[0], parts[1]
 }
 
 type WebConfig struct {
+	APIKey  string `yaml:"apiKey"  env:"API_KEY"`
+	Port    int    `yaml:"port"    env:"PORT"`
 	Enabled bool   `yaml:"enabled" env:"ENABLED"`
-	Port    int    `yaml:"port" env:"PORT"`
-	APIKey  string `yaml:"api_key" env:"API_KEY"`
 }
 
 type Schedule struct {
@@ -60,51 +71,72 @@ type Schedule struct {
 }
 
 type LogConfig struct {
+	LevelStr      string       `yaml:"level"         env:"LEVEL"`
+	Path          string       `yaml:"path"          env:"PATH"`
 	Level         logrus.Level `yaml:"-"`
-	LevelStr      string       `yaml:"level" env:"LEVEL"`
-	AddMethodName bool         `yaml:"add_method_name" env:"ADD_METHOD_NAME"`
-	Path          string       `yaml:"path" env:"PATH"`
+	AddMethodName bool         `yaml:"addMethodName" env:"ADD_METHOD_NAME"`
 }
 
 func GetConfig() *Config {
 	if config == nil {
 		cfg := GetConfigFromFile()
+
 		ctx := context.Background()
-		if err := envconfig.ProcessWith(ctx, &envconfig.Config{
+
+		err := envconfig.ProcessWith(ctx, &envconfig.Config{
 			Target:           cfg,
 			Lookuper:         envconfig.PrefixLookuper(EnvKeyPrefix, envconfig.OsLookuper()),
 			DefaultOverwrite: true,
-		}); err != nil {
+		})
+		if err != nil {
 			log.Fatalf("Failed to process env config: %v", err)
 		}
+
 		if cfg.LogConfig.LevelStr != "" {
 			level, err := logrus.ParseLevel(cfg.LogConfig.LevelStr)
 			if err != nil {
 				log.Fatalf("Failed to parse log level: %v", err)
 			}
+
 			cfg.LogConfig.Level = level
 		}
+
 		config = cfg
 	}
+
 	return config
 }
 
 func GetConfigFromFile() *Config {
-	config := GetDefaultConfig()
+	newConfig := GetDefaultConfig()
+
 	file, err := os.Open(getConfigFilePath())
 	if err != nil {
 		log.Fatalf("Failed to open config file: %v", err)
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		fileErr := file.Close()
+		if fileErr != nil {
+			fmt.Printf("Failed to close config file: %v", fileErr)
+		}
+	}(file)
+
 	content, err := io.ReadAll(file)
 	if err != nil {
-		log.Fatalf("Failed to read config file: %v", err)
+		fileErr := file.Close()
+		if fileErr != nil {
+			fmt.Printf("Failed to close config file: %v", fileErr)
+		}
+
+		log.Fatalf("Failed to read config file: %v", fileErr) //nolint:gocritic
 	}
-	err = yaml.Unmarshal(content, config)
+
+	err = yaml.Unmarshal(content, newConfig)
 	if err != nil {
 		log.Fatalf("Failed to parse config file: %v", err)
 	}
-	return config
+
+	return newConfig
 }
 
 func getConfigFilePath() string {
@@ -112,15 +144,19 @@ func getConfigFilePath() string {
 	if configPath != "" {
 		return configPath
 	}
+
 	configDir := os.Getenv("CONFIG_DIR")
 	if configDir == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
 			log.Fatalf("%v", err)
 		}
+
 		configDir = cwd
 	}
+
 	configPath = path.Join(configDir, defaultConfigFile)
+
 	return configPath
 }
 
@@ -129,11 +165,11 @@ func GetDefaultConfig() *Config {
 		RunOnce:  false,
 		RepoPath: "tmp/repos",
 		Schedule: Schedule{
-			Interval: 15 * time.Minute,
+			Interval: defaultInterval,
 		},
 		WebConfig: WebConfig{
 			Enabled: false,
-			Port:    8080,
+			Port:    defaultPort,
 			APIKey:  "",
 		},
 		LogConfig: LogConfig{
@@ -147,21 +183,25 @@ func GetDefaultConfig() *Config {
 func (g *GitSource) Valid() (bool, error) {
 	foundErrors := make([]error, 0)
 	if g.URL == "" {
-		foundErrors = append(foundErrors, errors.New("url is required"))
+		foundErrors = append(foundErrors, errURLIsRequired)
 	}
+
 	if len(foundErrors) > 0 {
 		return false, errors.Join(foundErrors...)
 	}
+
 	return true, nil
 }
 
 func (c *Config) Valid() (bool, error) {
 	foundErrors := make([]error, 0)
+
 	for _, value := range c.Values {
 		valid, err := value.Source.Valid()
 		if !valid {
 			foundErrors = append(foundErrors, err)
 		}
+
 		for _, mirror := range value.Mirrors {
 			valid, err := mirror.Valid()
 			if !valid {
@@ -169,8 +209,10 @@ func (c *Config) Valid() (bool, error) {
 			}
 		}
 	}
+
 	if len(foundErrors) > 0 {
 		return false, errors.Join(foundErrors...)
 	}
+
 	return true, nil
 }

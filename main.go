@@ -3,18 +3,24 @@ package main
 import (
 	"context"
 	"fmt"
-	log "github.com/sirupsen/logrus"
-	"github.com/zekihan/git-mirrorer/config"
-	"github.com/zekihan/git-mirrorer/mirror"
-	"github.com/zekihan/go-commons/environment"
-	"github.com/zekihan/go-commons/utils"
-	"github.com/zekihan/go-commons/web/health"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/zekihan/go-commons/environment"
+	"github.com/zekihan/go-commons/utils"
+	"github.com/zekihan/go-commons/web/health"
+
+	log "github.com/sirupsen/logrus"
+
+	"github.com/zekihan/git-mirrorer/config"
+	"github.com/zekihan/git-mirrorer/mirror"
 )
 
-var cfg *config.Config
+var (
+	cfg            *config.Config
+	defaultTimeout = 10 * time.Second
+)
 
 func init() {
 	err := environment.LoadEnvironmentFile()
@@ -43,27 +49,31 @@ func main() {
 	log.Info(utils.GetStartupInfo())
 
 	ctx := context.Background()
+
 	if cfg.RunOnce {
 		mirror.Reconcile(ctx)
+
 		return
 	}
 
-	go func() {
-		mirror.StartReconcileLoop()
-	}()
-
 	if cfg.WebConfig.Enabled {
-		http.HandleFunc("/", health.GetHealth)
+		go func() {
+			http.HandleFunc("/", health.GetHealth)
 
-		err := http.ListenAndServe(fmt.Sprintf(":%d", cfg.WebConfig.Port), nil)
-		if err != nil {
-			log.Error(err)
-		}
-	} else {
-		for {
-			time.Sleep(time.Hour)
-		}
+			srv := &http.Server{
+				Addr:         fmt.Sprintf(":%d", cfg.WebConfig.Port),
+				ReadTimeout:  defaultTimeout,
+				WriteTimeout: defaultTimeout,
+			}
+
+			err := srv.ListenAndServe()
+			if err != nil {
+				log.Errorf("Failed to start server: %v", err)
+				os.Exit(1)
+			}
+		}()
 	}
 
+	mirror.StartReconcileLoop()
 	mirror.StopReconcileLoop()
 }
