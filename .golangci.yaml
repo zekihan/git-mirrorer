@@ -155,6 +155,13 @@ linters:
         - unused
         - opaque
         - unexported
+    ireturn:
+      allow:
+        - anon
+        - error
+        - empty
+        - stdlib
+        - UniversalClient
     paralleltest:
       ignore-missing: true
     varnamelen:
