@@ -251,6 +251,10 @@ linters:
         - name: if-return
         - name: increment-decrement
         - name: var-naming
+          arguments:
+            - [ ] # AllowList
+            - [ ] # DenyList
+            - - skip-package-name-checks: true
         - name: var-declaration
         - name: package-comments
           disabled: true
@@ -320,9 +324,11 @@ linters:
       bool-format: true
       hex-format: true
     sloglint:
-      kv-only: true
-      no-global: "all"
-      context: "all"
+      kv-only: false
+      attr-only: true
+      no-mixed-args: true
+      no-global: ""
+      context: scope
       msg-style: capitalized
       key-naming-case: camel
       args-on-sep-lines: true
