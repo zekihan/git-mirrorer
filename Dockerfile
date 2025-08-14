@@ -10,7 +10,6 @@ COPY ./dist ./dist
 RUN case ${TARGETPLATFORM} in \
         "linux/amd64")    ARCH="amd64"    ;; \
         "linux/arm64")    ARCH="arm64"    ;; \
-        "linux/riscv64")  ARCH="riscv64"  ;; \
         "linux/ppc64le")  ARCH="ppc64le"  ;; \
         "linux/s390x")    ARCH="s390x"    ;; \
         "linux/386")      ARCH="386"      ;; \
