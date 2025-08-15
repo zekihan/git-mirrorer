@@ -23,8 +23,8 @@ github.com/tdewolff/parse/v2 v2.8.2-0.20250806174018-50048bb39781 h1:2qicgFovKg1
 github.com/tdewolff/parse/v2 v2.8.2-0.20250806174018-50048bb39781/go.mod h1:Hwlni2tiVNKyzR1o6nUs4FOF07URA+JLBLd6dlIXYqo=
 github.com/tdewolff/test v1.0.11 h1:FdLbwQVHxqG16SlkGveC0JVyrJN62COWTRyUFzfbtBE=
 github.com/tdewolff/test v1.0.11/go.mod h1:XPuWBzvdUzhCuxWO1ojpXsyzsA5bFoS3tO/Q3kFuTG8=
-github.com/zekihan/go-commons v0.1.5 h1:QyDxEPDDYmXlucER/BdKbk/RXuYG3trqYx+zYrwWA3U=
-github.com/zekihan/go-commons v0.1.5/go.mod h1:kv5wIRz9Cpt2P+qP6SeeBwHRLzRZJt4oLP6C741bE44=
+github.com/zekihan/go-commons v0.1.6 h1:P97kKQWPkgclUW34I0thqPEYRVMIvK0K5t6YU+3aWWc=
+github.com/zekihan/go-commons v0.1.6/go.mod h1:nQoMBmwCxwKTkJpyBgy8FalCIylSopIXuiyNm0fVSqM=
 golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.34.0 h1:H5Y5sJ2L2JRdyv7ROF1he/lPdvFsd0mJHFw2ThKHxLA=
 golang.org/x/sys v0.34.0/go.mod h1:BJP2sWEmIv4KK5OTEluFJCKSidICx8ciO85XgH3Ak8k=
