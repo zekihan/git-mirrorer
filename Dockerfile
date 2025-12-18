@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM alpine:3.23.0@sha256:51183f2cfa6320055da30872f211093f9ff1d3cf06f39a0bdb212314c5dc7375 AS certs
+FROM --platform=$BUILDPLATFORM alpine:3.23.2@sha256:c93cec902b6a0c6ef3b5ab7c65ea36beada05ec1205664a4131d9e8ea13e405d AS certs
 RUN apk update && apk add ca-certificates
 
 FROM --platform=$BUILDPLATFORM busybox:1.37.0@sha256:d80cd694d3e9467884fcb94b8ca1e20437d8a501096cdf367a5a1918a34fc2fd AS builder
