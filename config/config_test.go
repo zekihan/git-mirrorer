@@ -1,12 +1,11 @@
 package config
 
 import (
+	"log/slog"
 	"os"
 	"path"
 	"testing"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 func TestGetDefaultConfig(t *testing.T) {
@@ -27,7 +26,7 @@ func TestGetDefaultConfig(t *testing.T) {
 		t.Errorf("expected WebConfig.Port to be 8080, got %v", cfg.WebConfig.Port)
 	}
 
-	if cfg.LogConfig.Level != logrus.WarnLevel {
+	if cfg.LogConfig.Level != slog.LevelWarn {
 		t.Errorf("expected LogConfig.Level to be WarnLevel, got %v", cfg.LogConfig.Level)
 	}
 }
@@ -145,7 +144,7 @@ func TestGetConfig_EnvOverrideAndLogLevel(t *testing.T) {
 	config = nil // reset global config
 
 	cfg := GetConfig()
-	if cfg.LogConfig.Level != logrus.ErrorLevel {
+	if cfg.LogConfig.Level != slog.LevelError {
 		t.Errorf("expected log level error, got %v", cfg.LogConfig.Level)
 	}
 

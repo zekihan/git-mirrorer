@@ -3,15 +3,19 @@ package git
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/zekihan/go-commons/utils"
-
-	log "github.com/sirupsen/logrus"
 )
 
 func push(ctx context.Context, repoPath, mirrorURL string) error {
 	repoURLFromPath := getRepoURLFromPath(repoPath) //nolint:contextcheck // This is a local path
-	log.Debug(fmt.Sprintf("Pushing to mirror(%s) origin in %s", mirrorURL, repoURLFromPath))
+	slog.DebugContext(
+		ctx,
+		"Setting push URL for mirror",
+		slog.String("mirrorUrl", mirrorURL),
+		slog.String("repoUrlFromPath", repoURLFromPath),
+	)
 
 	err := utils.RunCmdInPath(
 		ctx,
@@ -33,7 +37,12 @@ func push(ctx context.Context, repoPath, mirrorURL string) error {
 		return fmt.Errorf("failed to push to mirror %s: %w", mirrorURL, err)
 	}
 
-	log.Debug(fmt.Sprintf("Pushed to mirror(%s) origin in %s", mirrorURL, repoURLFromPath))
+	slog.DebugContext(
+		ctx,
+		"Successfully pushed to mirror",
+		slog.String("mirrorUrl", mirrorURL),
+		slog.String("repoUrlFromPath", repoURLFromPath),
+	)
 
 	return nil
 }

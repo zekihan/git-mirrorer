@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -10,8 +11,6 @@ import (
 	"github.com/zekihan/go-commons/environment"
 	"github.com/zekihan/go-commons/utils"
 	"github.com/zekihan/go-commons/web/health"
-
-	log "github.com/sirupsen/logrus"
 
 	"github.com/zekihan/git-mirrorer/config"
 	"github.com/zekihan/git-mirrorer/mirror"
@@ -25,7 +24,11 @@ var (
 func init() {
 	err := environment.LoadEnvironmentFile()
 	if err != nil {
-		log.Errorf("Error loading environment file: %v", err)
+		slog.ErrorContext(
+			context.Background(),
+			"Error loading environment file",
+			slog.Any("error", err),
+		)
 		os.Exit(1)
 	}
 
@@ -33,22 +36,17 @@ func init() {
 	cfg = config.GetConfig()
 
 	// Init logger.
-	err = utils.InitLogger(&utils.LoggerConfig{
-		Path:          cfg.LogConfig.Path,
-		Level:         cfg.LogConfig.Level,
-		AddMethodName: cfg.LogConfig.AddMethodName,
+	utils.InitLogger(&utils.LoggerConfig{
+		Level:     cfg.LogConfig.Level,
+		AddSource: cfg.LogConfig.AddSource,
 	})
-	if err != nil {
-		log.Errorf("Error initializing logger: %v", err)
-		os.Exit(1)
-	}
 }
 
 func main() {
-	log.Info("Starting git mirrorer server")
-	log.Info(utils.GetStartupInfo())
-
 	ctx := context.Background()
+
+	slog.InfoContext(ctx, "Starting git mirrorer server")
+	utils.LogVersionInfo(ctx)
 
 	if cfg.RunOnce {
 		mirror.Reconcile(ctx)
@@ -68,7 +66,7 @@ func main() {
 
 			err := srv.ListenAndServe()
 			if err != nil {
-				log.Errorf("Failed to start server: %v", err)
+				slog.ErrorContext(ctx, "Failed to start web server", slog.Any("error", err))
 				os.Exit(1)
 			}
 		}()

@@ -3,9 +3,8 @@ package mirror
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 
 	"github.com/zekihan/git-mirrorer/config"
 	"github.com/zekihan/git-mirrorer/git"
@@ -20,7 +19,7 @@ func Reconcile(ctx context.Context) {
 
 	values := cfg.Values
 	if len(values) == 0 {
-		log.Info("No values to reconcile")
+		slog.InfoContext(ctx, "No values to reconcile")
 
 		return
 	}
@@ -53,7 +52,7 @@ func Reconcile(ctx context.Context) {
 	for range values {
 		res := <-result
 		if res != nil {
-			log.Errorf("Error reconciling: %v", res)
+			slog.ErrorContext(ctx, "Failed to reconcile mirror", slog.Any("error", res))
 
 			continue
 		}
