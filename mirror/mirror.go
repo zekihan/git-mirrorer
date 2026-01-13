@@ -31,7 +31,7 @@ func Reconcile(ctx context.Context) {
 		go func() {
 			for job := range jobs {
 				source := job.Source
-				errs := make([]error, 0)
+				errs := make([]error, 0, len(job.Mirrors))
 
 				for _, mirror := range job.Mirrors {
 					err := git.HandleMirror(ctx, source, mirror)
