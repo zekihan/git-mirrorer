@@ -17,7 +17,7 @@ jobs:
     runs-on: zekihan.git-mirrorer
     steps:
       - name: Check Out The Repo
-        uses: actions/checkout@v6.0.1
+        uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0
 
