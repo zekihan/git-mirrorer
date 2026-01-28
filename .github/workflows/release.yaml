@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: zekihan.git-mirrorer
+    runs-on: ubuntu-latest
     steps:
       - name: Check Out The Repo
         uses: actions/checkout@v6.0.2
