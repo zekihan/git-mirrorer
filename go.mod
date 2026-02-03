@@ -4,7 +4,7 @@ go 1.25.6
 
 require (
 	github.com/sethvargo/go-envconfig v1.3.0
-	github.com/zekihan/go-commons v1.0.3
+	github.com/zekihan/go-commons v1.0.4
 	gopkg.in/yaml.v3 v3.0.1
 )
 

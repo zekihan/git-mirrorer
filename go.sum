@@ -12,8 +12,8 @@ github.com/tdewolff/parse/v2 v2.8.5 h1:ZmBiA/8Do5Rpk7bDye0jbbDUpXXbCdc3iah4VeUvw
 github.com/tdewolff/parse/v2 v2.8.5/go.mod h1:Hwlni2tiVNKyzR1o6nUs4FOF07URA+JLBLd6dlIXYqo=
 github.com/tdewolff/test v1.0.11 h1:FdLbwQVHxqG16SlkGveC0JVyrJN62COWTRyUFzfbtBE=
 github.com/tdewolff/test v1.0.11/go.mod h1:XPuWBzvdUzhCuxWO1ojpXsyzsA5bFoS3tO/Q3kFuTG8=
-github.com/zekihan/go-commons v1.0.3 h1:K5tEgnfocq50hOXLu7gnRrxba5hCt5a32wmF9EkFR6o=
-github.com/zekihan/go-commons v1.0.3/go.mod h1:ixdGoWjig90Bs4hFivw//0kLw8sSwGQpDoP+tlcJ6JY=
+github.com/zekihan/go-commons v1.0.4 h1:UQuL76omoLNu502Kf3Yy2Yc8z65MFD2bddmw5IpVqg4=
+github.com/zekihan/go-commons v1.0.4/go.mod h1:OoHJoMiOVc0rsj26y1yapzo4yYBdymGGIjbQP+8muWc=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=
