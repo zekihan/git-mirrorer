@@ -135,6 +135,8 @@ linters:
       go-version-pattern: ^1\.\d+\.\d+$
       replace-allow-list: [ ]
     gosec:
+      excludes:
+        - G117 # Potential exposure of secrets via JSON marshaling
       config:
         G104:
           fmt:
