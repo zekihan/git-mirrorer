@@ -10,9 +10,9 @@ require (
 
 require (
 	github.com/joho/godotenv v1.5.1 // indirect
-	github.com/lmittmann/tint v1.1.2 // indirect
-	github.com/tdewolff/minify/v2 v2.24.8 // indirect
-	github.com/tdewolff/parse/v2 v2.8.5 // indirect
+	github.com/lmittmann/tint v1.1.3 // indirect
+	github.com/tdewolff/minify/v2 v2.24.13 // indirect
+	github.com/tdewolff/parse/v2 v2.8.12 // indirect
 )
 
 //replace github.com/zekihan/go-commons => ../go-commons
