@@ -51,7 +51,7 @@ func TestStartAndStopReconcileLoop(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		StartReconcileLoop()
+		StartReconcileLoop(t.Context())
 		time.Sleep( //nolint:forbidigo // Not a production code, just for testing
 			250 * time.Millisecond,
 		)

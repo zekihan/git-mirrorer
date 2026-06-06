@@ -10,7 +10,7 @@ import (
 	"github.com/zekihan/git-mirrorer/git"
 )
 
-var quit chan bool
+var quit chan struct{}
 
 const threadCount = 8
 
@@ -59,12 +59,19 @@ func Reconcile(ctx context.Context) {
 	}
 }
 
-func StartReconcileLoop() {
-	ctx, cancel := context.WithCancel(context.Background())
+func StartReconcileLoop(ctx context.Context) {
 	Reconcile(ctx)
 
-	ticker := time.NewTicker(config.GetConfig().Schedule.Interval)
-	quit = make(chan bool)
+	//nolint:contextcheck // Top-level config access, context not applicable.
+	interval := config.GetConfig().Schedule.Interval
+	ticker := time.NewTicker(interval)
+	quit = make(chan struct{})
+
+	slog.InfoContext(
+		ctx,
+		"Starting reconcile loop",
+		slog.Duration("interval", interval),
+	)
 
 	go func() {
 		for {
@@ -73,7 +80,6 @@ func StartReconcileLoop() {
 				Reconcile(ctx)
 			case <-quit:
 				ticker.Stop()
-				cancel()
 
 				return
 			}
@@ -82,7 +88,7 @@ func StartReconcileLoop() {
 }
 
 func StopReconcileLoop() {
-	quit <- true
+	quit <- struct{}{}
 
 	close(quit)
 }

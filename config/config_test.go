@@ -87,15 +87,6 @@ func TestGitSource_GetRepoPath(t *testing.T) {
 	}
 }
 
-func TestGitSource_GetOwnerEntity(t *testing.T) {
-	gs := &GitSource{URL: "git@github.com:user/repo.git"}
-
-	owner, repo := gs.GetOwnerEntity()
-	if owner != "user" || repo != "repo" {
-		t.Errorf("expected owner 'user' and repo 'repo', got '%s' and '%s'", owner, repo)
-	}
-}
-
 func TestGetConfigFilePath(t *testing.T) {
 	t.Setenv("CONFIG_PATH", "/tmp/myconfig.yaml")
 
@@ -182,16 +173,4 @@ func TestConfig_Valid_MultipleValues(t *testing.T) {
 	if !valid || err != nil {
 		t.Errorf("expected valid config, got error: %v", err)
 	}
-}
-
-func TestGitSource_GetOwnerEntity_InvalidFormat(t *testing.T) {
-	gs := &GitSource{URL: "invalidurl"}
-
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("expected panic on invalid url format")
-		}
-	}()
-
-	gs.GetOwnerEntity()
 }

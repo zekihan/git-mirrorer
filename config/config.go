@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sethvargo/go-envconfig"
@@ -25,6 +26,7 @@ const (
 
 var (
 	config           *Config
+	configMu         sync.Mutex
 	errURLIsRequired = errors.New("url is required")
 )
 
@@ -50,14 +52,6 @@ func (g *GitSource) GetRepoPath() string {
 	return path.Join(GetConfig().RepoPath, url.PathEscape(g.URL))
 }
 
-func (g *GitSource) GetOwnerEntity() (string, string) {
-	parts := strings.Split(g.URL, ".git")
-	parts = strings.Split(parts[0], ":")
-	parts = strings.Split(parts[1], "/")
-
-	return parts[0], parts[1]
-}
-
 type WebConfig struct {
 	APIKey  string `yaml:"apiKey"  env:"API_KEY"`
 	Port    int    `yaml:"port"    env:"PORT"`
@@ -75,6 +69,9 @@ type LogConfig struct {
 }
 
 func GetConfig() *Config {
+	configMu.Lock()
+	defer configMu.Unlock()
+
 	if config == nil {
 		cfg := GetConfigFromFile()
 
@@ -87,7 +84,7 @@ func GetConfig() *Config {
 		})
 		if err != nil {
 			slog.ErrorContext(ctx, "Failed to process env config", slog.Any("error", err))
-			os.Exit(1) //nolint:forbidigo // This package configures log packages.
+			os.Exit(1) //nolint:forbidigo,gocritic // This package configures log packages.
 		}
 
 		if cfg.LogConfig.LevelStr != "" {
