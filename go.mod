@@ -3,7 +3,7 @@ module github.com/zekihan/git-mirrorer
 go 1.26.5
 
 require (
-	github.com/sethvargo/go-envconfig v1.4.2
+	github.com/sethvargo/go-envconfig v1.4.3
 	github.com/zekihan/go-commons v1.0.6
 	gopkg.in/yaml.v3 v3.0.1
 )
