@@ -41,6 +41,7 @@ func init() {
 
 	// Init logger.
 	utils.InitLogger(&utils.LoggerConfig{
+		Writer:    nil,
 		Level:     cfg.LogConfig.Level,
 		AddSource: cfg.LogConfig.AddSource,
 	})
@@ -65,9 +66,24 @@ func main() {
 		http.HandleFunc("/", health.GetHealth)
 
 		srv = &http.Server{
-			Addr:         fmt.Sprintf(":%d", cfg.WebConfig.Port),
-			ReadTimeout:  defaultTimeout,
-			WriteTimeout: defaultTimeout,
+			Addr:                         fmt.Sprintf(":%d", cfg.WebConfig.Port),
+			Handler:                      nil,
+			DisableGeneralOptionsHandler: false,
+			TLSConfig:                    nil,
+			ReadTimeout:                  defaultTimeout,
+			ReadHeaderTimeout:            0,
+			WriteTimeout:                 defaultTimeout,
+			IdleTimeout:                  0,
+			MaxHeaderBytes:               0,
+			MaxHeaderValueCount:          0,
+			TLSNextProto:                 nil,
+			ConnState:                    nil,
+			ErrorLog:                     nil,
+			BaseContext:                  nil,
+			ConnContext:                  nil,
+			HTTP2:                        nil,
+			Protocols:                    nil,
+			DisableClientPriority:        false,
 		}
 
 		go func() {

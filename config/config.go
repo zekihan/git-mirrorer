@@ -78,9 +78,15 @@ func GetConfig() *Config {
 		ctx := context.Background()
 
 		err := envconfig.ProcessWith(ctx, &envconfig.Config{
-			Target:           cfg,
-			Lookuper:         envconfig.PrefixLookuper(EnvKeyPrefix, envconfig.OsLookuper()),
-			DefaultOverwrite: true,
+			Target:             cfg,
+			Lookuper:           envconfig.PrefixLookuper(EnvKeyPrefix, envconfig.OsLookuper()),
+			DefaultDelimiter:   "",
+			DefaultSeparator:   "",
+			DefaultNoInit:      false,
+			DefaultOverwrite:   true,
+			DefaultDecodeUnset: false,
+			DefaultRequired:    false,
+			Mutators:           nil,
 		})
 		if err != nil {
 			slog.ErrorContext(ctx, "Failed to process env config", slog.Any("error", err))
@@ -202,6 +208,7 @@ func GetDefaultConfig() *Config {
 			APIKey:  "",
 		},
 		LogConfig: LogConfig{
+			LevelStr:  "",
 			Level:     slog.LevelWarn,
 			AddSource: false,
 		},
