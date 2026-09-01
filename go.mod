@@ -1,6 +1,6 @@
 module github.com/zekihan/git-mirrorer
 
-go 1.27.0
+go 1.27.1
 
 require (
 	github.com/sethvargo/go-envconfig v1.4.3
