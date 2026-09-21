@@ -7,11 +7,24 @@ docker build --tag "$image" .
 smoke_dir=$(mktemp -d)
 chmod 777 "$smoke_dir"
 cleanup() {
-    docker run --rm --entrypoint sh --mount "type=bind,src=$smoke_dir,dst=/fixture" "$image" \
-        -c 'chmod -R a+rwX /fixture' >/dev/null 2>&1 || true
-    rm -rf "$smoke_dir"
+    cleanup_status=$?
+    trap - EXIT HUP INT TERM
+    if ! docker run --rm --network none --entrypoint sh --mount "type=bind,src=$smoke_dir,dst=/fixture" "$image" \
+        -ec 'rm -rf /fixture/source /fixture/destination /fixture/state; rm -f /fixture/config.yaml'; then
+        cleanup_status=1
+    fi
+    if ! rm -rf "$smoke_dir"; then
+        cleanup_status=1
+    fi
+    if [ "$cleanup_status" -eq 0 ]; then
+        echo "Container smoke test passed"
+    fi
+    exit "$cleanup_status"
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 docker run --rm --entrypoint sh --mount "type=bind,src=$smoke_dir,dst=/fixture" "$image" -ec '
     test "$(id -u)" != 0
@@ -48,4 +61,3 @@ docker run --rm --network none --mount "type=bind,src=$smoke_dir,dst=/fixture" "
 status=$?
 set -e
 test "$status" = 1
-echo "Container smoke test passed"
