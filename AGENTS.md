@@ -1,68 +1,47 @@
 # AGENTS.md
 
-This file provides guidance to AI Agents when working with code in this repository.
-
 ## Commands
 
-```bash
-# Build for local platform (requires goreleaser)
-make build
+- `make build`: build `dist/git-mirrorer` using Go directly.
+- `make lint`: check formatting and run golangci-lint without modifying files.
+- `make test`: run all unit/integration tests with the race detector.
+- `go test -run TestName ./internal/git`: run a focused package test.
+- `make fmt` / `make tidy`: explicitly format or update module metadata.
+- `make release-check`: validate GoReleaser configuration.
+- `make container-test`: build and smoke-test the image with temporary local repositories.
 
-# Run tests
-make test
-
-# Run a single test package
-./scripts/go_test.sh -v -run TestName ./git/...
-
-# Lint
-make lint
-
-# Format and tidy
-make tidy
-
-# Run the binary (after build)
-make run
-```
-
-The test script (`scripts/go_test.sh`) sets `CONFIG_DIR` to the project root so tests can find `config.yaml`.
+Git is required for integration tests. Git LFS enables payload tests and is required
+in CI. Test helpers isolate HOME/Git configuration; no real remote credentials or
+project config are used. Never execute the user's mirroring config as validation.
 
 ## Architecture
 
-**Entry point:** `main.go` — loads `.env`, reads config, then either runs once (`mirror.Reconcile`) or starts a ticker loop (`mirror.StartReconcileLoop`). An optional HTTP health endpoint (`/`) runs concurrently when `web.enabled` is true.
+- `cmd/git-mirrorer`: flags, strict startup, signals, composition, and exit codes.
+- `internal/config`: YAML defaults/validation, source ownership, address normalization.
+- `internal/git`: Git/LFS CLI operations, bounded diagnostics, process-group cleanup.
+- `internal/cache`: SHA-256 source directories, metadata, advisory locks, clone publication.
+- `internal/mirror`: bounded source workers, one snapshot per source, independent destination results.
+- `internal/report`: ordered text/JSON final output.
+- `internal/redact`: sanitize diagnostics before reporting.
+- `internal/testutil`: isolated local repository fixtures.
 
-**Config (`config/`):** Config is loaded from a YAML file (default: `config.yaml` in cwd, or via `CONFIG_PATH`/`CONFIG_DIR` env vars) and then overlaid with env vars prefixed `GM__`. The singleton is initialized once via `GetConfig()`. Key fields: `values` (list of source→mirrors pairs), `schedule.interval`, `runOnce`, `repoPath`.
+The executable runs once. There is no HTTP server, scheduler, global config,
+configuration environment overlay, or backward compatibility layer. YAML is loaded
+from `--config` (default `./git-mirrorer.yaml`). Relative paths resolve from that
+file's directory. Sources are unique; destinations cannot have multiple owners or
+also be sources. Fetch once, then push all destinations from the locked snapshot.
+Never push an old cache after refresh failure. Continue unrelated work on failures.
 
-**Mirror loop (`mirror/`):** `Reconcile` fans out to 8 goroutines via a jobs channel, one job per `Value` entry. Each job iterates its mirrors and calls `git.HandleMirror` for each.
+Production Git operations must use the command runner, argument arrays, explicit
+working directories, deadlines, and owned process groups. Keep stdout reserved for
+the final report and stderr for progress. Failures must reach the process exit code.
+Only `main` may exit the production process. Preserve meaningful local-Git behavior
+tests; do not replace ref equality assertions with command-only mocks.
 
-**Git operations (`git/`):**
-- `HandleMirror` — clones or fetches the source, then pushes to the mirror URL.
-- `clone.go` — `git clone --mirror <url> <path>`
-- `fetch.go` — `git fetch -p origin` (prune-enabled)
-- `push.go` — sets the push URL via `git remote set-url --push origin <mirrorURL>`, then `git push --mirror`
+## Delivery
 
-Repos are stored locally at `<repoPath>/<url-escaped-source-url>` (e.g. `tmp/repos/git%40github.com%3Azekihan%2Ffoo.git`).
-
-**Build:** Uses goreleaser (`build/local` for snapshot single-target). The Dockerfile copies pre-built binaries from `dist/` into an Alpine-based final image using the `golang:alpine` base (for git/ssh).
-
-## Configuration
-
-`config.yaml` structure:
-```yaml
-repoPath: tmp/repos
-runOnce: false
-schedule:
-  interval: 15m
-web:
-  enabled: false
-  port: 8080
-log:
-  level: warn
-  addSource: false
-values:
-  - source:
-      url: git@github.com:owner/repo.git
-    mirrors:
-      - url: git@gitlab.com:owner/repo.git
-```
-
-All `Config` fields are also overridable via env with `GM__` prefix (e.g. `GM__RUN_ONCE`, `GM__SCHEDULE_INTERVAL`).
+Linux/macOS, amd64/arm64. GoReleaser packages native binaries; Docker builds its own
+binary and uses a non-root Alpine runtime with Git/LFS/SSH. Compose runs once with
+persistent state and no ports. Do not push or publish unless explicitly requested.
+Make commits logically separated; run lint/tests before committing. Do not add
+custom author/co-author metadata or trailers to commits.

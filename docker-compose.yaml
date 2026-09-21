@@ -1,12 +1,10 @@
-version: '3.8'
-
 services:
   git-mirrorer:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "8080:8080"
+    build: .
     volumes:
-      - ./config.yaml:/config.yaml
-    restart: unless-stopped
+      - ./git-mirrorer.yaml:/data/git-mirrorer.yaml:ro
+      - mirror-state:/data/.git-mirrorer
+    restart: "no"
+
+volumes:
+  mirror-state:

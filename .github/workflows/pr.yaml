@@ -1,69 +1,44 @@
-name: PR Workflow
-
+name: Checks
 on:
   workflow_dispatch:
+  workflow_call:
   pull_request:
-    branches:
-      - main
-
-concurrency:
-  group: pr-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
+    branches: [main]
 permissions:
-  contents: write
-
+  contents: read
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  pr:
-    runs-on: ubuntu-latest
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
-      - name: Check Out The Repo
-        uses: actions/checkout@v7.0.1
-        with:
-          fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v7.0.0
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
-          cache-dependency-path: go.sum
-
-      - name: Set up GoReleaser
-        uses: goreleaser/goreleaser-action@v7.2.3
+      - name: Verify Git LFS
+        run: git lfs version
+      - uses: golangci/golangci-lint-action@v9.3.0
+        with:
+          version: v2.13.2
+          args: --timeout=5m
+      - name: Check formatting and modules
+        run: |
+          test -z "$(gofmt -l cmd internal)"
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - run: make test build
+      - uses: goreleaser/goreleaser-action@v7.2.3
         with:
           install-only: true
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends make build-essential
-          if [ -f .github/scripts/install_build_deps.sh ]; then
-            echo "Installing build dependencies from .github/scripts/install_build_deps.sh"
-            bash .github/scripts/install_build_deps.sh
-          else
-            echo "No build dependencies script found, skipping."
-          fi
-
-      - name: Tidy
-        run: |
-          make tidy
-
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v9.3.0
-
-      - name: Lint
-        run: |
-          make lint
-
-      - name: Fail if there are any changes
-        run: |
-          git diff --exit-code
-
-      - name: Test
-        run: |
-          make test
-
-      - name: Build
-        run: |
-          make build/release/all
+          version: v2.18.1
+      - run: make release-check
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: make container-test

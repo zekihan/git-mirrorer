@@ -27,3 +27,7 @@ dist/
 # Others
 tmp/
 .env
+
+# Local configuration and disposable source caches.
+/git-mirrorer.yaml
+/.git-mirrorer/

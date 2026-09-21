@@ -1,0 +1,13 @@
+stateDir: .git-mirrorer
+concurrency: 4
+operationTimeout: 10m
+runTimeout: 0s
+logLevel: info
+repositories:
+  - name: example
+    source: git@github.com:owner/example.git
+    lfs: false
+    destinations:
+      - name: gitlab
+        url: git@gitlab.com:owner/example.git
+        atomic: true

@@ -1,116 +1,36 @@
-# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
-# vim: set ts=2 sw=2 tw=0 fo=cnqoj
-
 version: 2
-
 project_name: git-mirrorer
-
-before:
-  hooks:
-    - go fmt ./...
-    - go mod tidy
-
 builds:
   - id: all
-    binary: &binary '{{ .ProjectName }}_{{.Os}}_{{.Arch}}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}/{{ .ProjectName }}'
-    no_unique_dist_dir: &no_unique_dist_dir true
-    env: &env
+    main: ./cmd/git-mirrorer
+    binary: git-mirrorer
+    env:
       - CGO_ENABLED=0
-    ldflags: &ldflags
-      - -s -w
-      - -X github.com/zekihan/go-commons/utils.Version={{.Version}}
-      - -X github.com/zekihan/go-commons/utils.BuildDate={{.CommitTimestamp}}
-      - -X github.com/zekihan/go-commons/utils.CommitHash={{.Commit}}
-      - -X github.com/zekihan/go-commons/utils.GitTreeState={{.GitTreeState}}
-    flags: &flags
+    flags:
       - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.date={{.Date}}
+      - -X main.commit={{.Commit}}
     goos:
       - linux
       - darwin
-      - windows
     goarch:
       - amd64
       - arm64
-    ignore: [ ]
-
-  - id: docker
-    binary: *binary
-    no_unique_dist_dir: *no_unique_dist_dir
-    env: *env
-    ldflags: *ldflags
-    flags: *flags
-    goos:
-      - linux
-    goarch:
-      - amd64
-      - arm64
-    ignore: [ ]
-
-universal_binaries:
-  - id: darwin-universal
-    ids:
-      - all
-    name_template: "{{.ProjectName}}"
-    replace: false
-
 archives:
   - id: all
-    ids:
-      - all
-      - darwin-universal
-    name_template: '{{ .ProjectName }}_v{{ .Version }}_{{.Os}}_{{.Arch}}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
-    formats:
-      - tar.gz
-    format_overrides:
-      - goos: windows
-        formats:
-          - zip
+    ids: [all]
+    formats: [tar.gz]
     files:
-      - 'LICENSE*'
-      - 'license*'
-
-snapshot:
-  version_template: "{{ incpatch .Version }}-SNAPSHOT-{{.ShortCommit}}"
-
-report_sizes: true
-
+      - LICENSE
+      - README.md
+      - git-mirrorer.example.yaml
+      - docs/rewrite-plan.md
 checksum:
-  name_template: 'checksums.txt'
-
+  name_template: checksums.txt
 changelog:
-  disable: false
-  use: github
   sort: asc
-  groups:
-    - title: Features
-      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
-      order: 0
-    - title: "Bug fixes"
-      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
-      order: 1
-    - title: "Chores"
-      regexp: '^.*?chore(\([[:word:]]+\))??!?:.+$'
-      order: 2
-    - title: "CI"
-      regexp: '^.*?ci(\([[:word:]]+\))??!?:.+$'
-      order: 3
-    - title: Others
-      order: 999
-
 release:
-  ids:
-    - all
-  disable: false
-  draft: false
-  replace_existing_draft: true
-  prerelease: auto
-  make_latest: true
-  mode: keep-existing
-  footer: |
-    Docker images
-    ---
-    - `docker pull docker.io/zekihan/{{ .ProjectName }}:v{{.Version}}`
-    - `docker pull ghcr.io/zekihan/{{ .ProjectName }}:v{{.Version}}`
-
-metadata:
-  mod_timestamp: "{{ .CommitTimestamp }}"
+  ids: [all]

@@ -1,51 +1,28 @@
 name: Release
-
 on:
   push:
-    tags:
-      - "*"
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
-
+    tags: ['v*']
 permissions:
   contents: write
-
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
+  checks:
+    uses: ./.github/workflows/pr.yaml
   release:
+    needs: checks
     runs-on: ubuntu-latest
     steps:
-      - name: Check Out The Repo
-        uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
-
-      - name: Set up Go
-        uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
-          cache-dependency-path: go.sum
-
-      - name: Set up GoReleaser
-        uses: goreleaser/goreleaser-action@v7.2.3
+      - uses: goreleaser/goreleaser-action@v7.2.3
         with:
-          install-only: true
-
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends make build-essential
-          if [ -f .github/scripts/install_build_deps.sh ]; then
-            echo "Installing build dependencies from .github/scripts/install_build_deps.sh"
-            bash .github/scripts/install_build_deps.sh
-          else
-            echo "No build dependencies script found, skipping."
-          fi
-
-      - name: Make build
-        run: |
-          make release
+          version: v2.18.1
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
