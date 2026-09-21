@@ -16,6 +16,11 @@ func Write(writer io.Writer, format string, result mirror.Report) error {
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(result)
 	}
+	if result.Error != nil {
+		if _, err := fmt.Fprintf(writer, "run: %s (%s: %s)\n", result.Outcome, result.Error.Code, redact.Text(result.Error.Detail)); err != nil {
+			return err
+		}
+	}
 	for _, source := range result.Sources {
 		if source.Error != nil {
 			if _, err := fmt.Fprintf(writer, "%s: %s (%s: %s)\n", source.Name, source.Outcome, source.Error.Code, redact.Text(source.Error.Detail)); err != nil {

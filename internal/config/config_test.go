@@ -80,6 +80,7 @@ func TestAddresses(t *testing.T) {
 		{"ssh://git@EXAMPLE.com:2222/Owner/repo.git", "ssh://git@example.com:2222/Owner/repo.git", false},
 		{"https://EXAMPLE.com/Owner/repo.git", "https://example.com/Owner/repo.git", false},
 		{"./repo.git", filepath.Join(base, "repo.git"), true},
+		{"repo[1].git", filepath.Join(base, "repo[1].git"), true},
 		{"file:///tmp/repo.git", "/private/tmp/repo.git", true},
 	}
 	for _, tc := range cases {
