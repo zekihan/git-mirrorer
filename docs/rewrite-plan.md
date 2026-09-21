@@ -330,7 +330,7 @@ after a testable entry function returns and its defers have completed.
 - Replace Compose's port mapping and `unless-stopped` policy with a one-shot
   example, explicit config path, writable state mount, and credential instructions.
 - Remove private-module credentials from CI once no dependency requires them.
-- Provide Linux/macOS CI checks plus local-container smoke validation; tests never
+- Provide Linux CI checks plus local-container smoke validation; tests never
   require real hosting credentials or configured production destinations.
 - Keep actual release publication and pushes outside implementation validation.
 
