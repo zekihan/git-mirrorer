@@ -39,3 +39,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - run: make container-test
+  pr:
+    needs: [test, container]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all checks to pass
+        env:
+          TEST_RESULT: ${{ needs.test.result }}
+          CONTAINER_RESULT: ${{ needs.container.result }}
+        run: |
+          test "$TEST_RESULT" = success
+          test "$CONTAINER_RESULT" = success
