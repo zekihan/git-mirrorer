@@ -31,3 +31,32 @@ tmp/
 # Local configuration and disposable source caches.
 /git-mirrorer.yaml
 /.git-mirrorer/
+
+# Local and generated JetBrains IDE files
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+.idea/**/usage.statistics.xml
+.idea/**/shelf/
+.idea/**/dictionaries/
+.idea/**/caches/
+.idea/**/httpRequests/
+.idea/**/dataSources/
+.idea/**/dataSources*.xml
+.idea/**/dataSources.ids
+.idea/**/data_source_mapping.xml
+.idea/**/sqldialects.xml
+.idea/**/db-forest-config.xml
+.idea/**/dbnavigator.xml
+.idea/**/git_toolbox_prj.xml
+.idea/**/goProfileHistory.xml
+.idea/**/go.imports.xml
+.idea/**/modules.xml
+.idea/**/misc.xml
+.idea/**/vcs.xml
+.idea/**/.name
+.idea/**/sonarlint.xml
+.idea/**/sonarlint/
+*.iml
+*.ipr
+*.iws
+.idea/**/.gitignore
