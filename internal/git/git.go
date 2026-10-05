@@ -31,7 +31,19 @@ func (c *Client) CheckLFS(ctx context.Context) error {
 }
 
 func (c *Client) Clone(ctx context.Context, source, path string) error {
-	return c.command(ctx, "", nil, nil, "clone", "--mirror", "--no-local", "--config", "core.hooksPath="+os.DevNull, "--", source, path)
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		return errors.New("clone destination must not exist")
+	}
+	first := true
+	return c.retry(ctx, func(ctx context.Context) error {
+		if !first {
+			if err := os.RemoveAll(path); err != nil {
+				return err
+			}
+		}
+		first = false
+		return c.command(ctx, "", nil, nil, "clone", "--mirror", "--no-local", "--config", "core.hooksPath="+os.DevNull, "--", source, path)
+	})
 }
 
 func (c *Client) Validate(ctx context.Context, path, source string) error {
@@ -65,7 +77,9 @@ func (c *Client) Validate(ctx context.Context, path, source string) error {
 }
 
 func (c *Client) Fetch(ctx context.Context, path, source string) error {
-	return c.command(ctx, path, nil, nil, "fetch", "--atomic", "--prune", "--no-tags", "--no-recurse-submodules", "--", source, "+refs/*:refs/*")
+	return c.retry(ctx, func(ctx context.Context) error {
+		return c.command(ctx, path, nil, nil, "fetch", "--atomic", "--prune", "--no-tags", "--no-recurse-submodules", "--", source, "+refs/*:refs/*")
+	})
 }
 
 func (c *Client) Push(ctx context.Context, path, destination string, atomic bool) (Changes, error) {
@@ -77,7 +91,10 @@ func (c *Client) Push(ctx context.Context, path, destination string, atomic bool
 		// Git reports an error for an empty-to-empty push. Verify that no refs
 		// need deleting instead of treating that already-matching state as failure.
 		remote := &nonemptyWriter{}
-		if err := c.command(ctx, path, nil, remote, "ls-remote", "--refs", "--", destination); err != nil {
+		if err := c.retry(ctx, func(ctx context.Context) error {
+			remote.nonempty = false
+			return c.command(ctx, path, nil, remote, "ls-remote", "--refs", "--", destination)
+		}); err != nil {
 			return Changes{}, err
 		}
 		if !remote.nonempty {
@@ -89,11 +106,21 @@ func (c *Client) Push(ctx context.Context, path, destination string, atomic bool
 		args = append(args, "--atomic")
 	}
 	args = append(args, "--", destination)
-	parser := &pushParser{}
-	err := c.command(ctx, path, nil, parser, args...)
-	parser.finish()
-	if err == nil && parser.changes.Rejected > 0 {
-		err = errors.New("destination rejected refs")
+	var parser *pushParser
+	err := c.retry(ctx, func(ctx context.Context) error {
+		parser = &pushParser{}
+		err := c.command(ctx, path, nil, parser, args...)
+		parser.finish()
+		if parser.changes.Rejected > 0 {
+			if err != nil {
+				return fmt.Errorf("destination rejected refs: %w", err)
+			}
+			return errors.New("destination rejected refs")
+		}
+		return err
+	})
+	if parser == nil {
+		return Changes{}, err
 	}
 	return parser.changes, err
 }
@@ -148,9 +175,11 @@ func (c *Client) LFSFetch(ctx context.Context, path, source string) error {
 	if err := c.prepareLFS(ctx, path); err != nil {
 		return err
 	}
-	return c.command(ctx, path, nil, nil, "-c", "remote.mirrorer-lfs.url="+source,
-		"-c", "lfs.concurrenttransfers=1",
-		"-c", "lfs.skipdownloaderrors=false", "lfs", "fetch", "--all", "mirrorer-lfs")
+	return c.retry(ctx, func(ctx context.Context) error {
+		return c.command(ctx, path, nil, nil, "-c", "remote.mirrorer-lfs.url="+source,
+			"-c", "lfs.concurrenttransfers=1",
+			"-c", "lfs.skipdownloaderrors=false", "lfs", "fetch", "--all", "mirrorer-lfs")
+	})
 }
 
 func (c *Client) LFSPush(ctx context.Context, path, destination string) error {
@@ -174,12 +203,14 @@ func (c *Client) LFSPush(ctx context.Context, path, destination string) error {
 	if size == 0 {
 		return nil
 	}
-	if _, err := refs.Seek(0, io.SeekStart); err != nil {
-		return err
-	}
-	return c.command(ctx, path, refs, nil, "-c", "remote.mirrorer-lfs.url="+destination,
-		"-c", "lfs.concurrenttransfers=1",
-		"-c", "lfs.allowincompletepush=false", "lfs", "push", "--all", "mirrorer-lfs", "--stdin")
+	return c.retry(ctx, func(ctx context.Context) error {
+		if _, err := refs.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		return c.command(ctx, path, refs, nil, "-c", "remote.mirrorer-lfs.url="+destination,
+			"-c", "lfs.concurrenttransfers=1",
+			"-c", "lfs.allowincompletepush=false", "lfs", "push", "--all", "mirrorer-lfs", "--stdin")
+	})
 }
 
 func (c *Client) prepareLFS(ctx context.Context, path string) error {

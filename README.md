@@ -49,7 +49,7 @@ The example shows all defaults. `repositories` must be nonempty. Every repositor
 needs a unique name, source, and at least one named destination. `lfs` defaults to
 false and destination `atomic` defaults to true. `concurrency` limits active source
 jobs; destinations for a source run sequentially. `operationTimeout` bounds each
-Git/LFS subprocess. `runTimeout: 0s` disables the whole-run deadline.
+Git/LFS subprocess and the complete retry sequence for each network command. `runTimeout: 0s` disables the whole-run deadline.
 
 Paths, including relative local repository paths, resolve from the configuration
 file's directory. Addresses support HTTPS, SSH URLs, SCP-style SSH addresses, and
@@ -78,6 +78,12 @@ The tool refreshes a source successfully before pushing any of its destinations.
 A failed refresh never causes stale cached refs to be pushed. A failed destination
 allows other destinations and sources to continue. Every result is reported in
 configuration order, even when sources run concurrently.
+
+Clone, fetch, push, and LFS transfers retry recognized transient connection failures
+up to three attempts total, waiting 1–1.5 seconds and then 2–3 seconds. Retries
+share the operation deadline and stop on cancellation. Authentication failures,
+rejected refs, and repository corruption fail immediately. Push retries use the
+same locked source snapshot; change counts describe the final attempt.
 
 Pushes require atomic support by default, so a rejected ref leaves that destination's
 refs unchanged. Use `atomic: false` explicitly for a server that lacks support;
