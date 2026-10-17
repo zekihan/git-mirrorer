@@ -108,30 +108,32 @@ func (r *Runner) Run(ctx context.Context, dir string, input io.Reader, output io
 	if err := command.Start(); err != nil {
 		return fmt.Errorf("start git: %w", err)
 	}
-	done := make(chan error, 1)
-	go func() { done <- command.Wait() }()
+	done := make(chan struct{})
+	var waitErr error
+	go func() {
+		waitErr = command.Wait()
+		close(done)
+	}()
 	var err error
 	select {
-	case err = <-done:
+	case <-done:
+		err = waitErr
 		if err != nil || ctx.Err() != nil {
 			_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
 		}
 	case <-ctx.Done():
 		_ = syscall.Kill(-command.Process.Pid, syscall.SIGTERM)
 		timer := time.NewTimer(200 * time.Millisecond)
-		waited := false
 		select {
 		case <-done:
-			waited = true
 		case <-timer.C:
 		}
 		timer.Stop()
 		// The parent may already have exited while helpers still own its pipes.
 		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
-		// WaitDelay bounds pipe cleanup. Wait may have been consumed above.
-		if !waited {
-			<-done
-		}
+		// WaitDelay bounds pipe cleanup. Cancellation is authoritative, but
+		// the child still must be reaped before returning.
+		<-done
 		err = ctx.Err()
 	}
 	if ctx.Err() != nil {
