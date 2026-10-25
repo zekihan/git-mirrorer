@@ -79,17 +79,42 @@ A failed refresh never causes stale cached refs to be pushed. A failed destinati
 allows other destinations and sources to continue. Every result is reported in
 configuration order, even when sources run concurrently.
 
-Clone, fetch, push, and LFS transfers retry recognized transient connection failures
-up to three attempts total, waiting 1–1.5 seconds and then 2–3 seconds. Retries
-share the operation deadline and stop on cancellation. Authentication failures,
-rejected refs, and repository corruption fail immediately. Push retries use the
-same locked source snapshot; change counts describe the final attempt.
+### Command retries and whole-run retries
 
-Pushes require atomic support by default, so a rejected ref leaves that destination's
-refs unchanged. Use `atomic: false` explicitly for a server that lacks support;
-a failed non-atomic push may have updated some refs. There is no transaction across
-destinations. A lost connection may leave the outcome uncertain; rerun to reconcile.
-No application-level automatic retries are performed.
+Clone, fetch, push, LFS fetch/push, and the empty-source destination ref check
+retry recognized transient command failures up to three attempts total (the initial
+attempt plus at most two retries). Backoff waits are 1–1.5 seconds and then 2–3
+seconds. All attempts and waits for a network command share one
+`operationTimeout` budget; retries do not reset it. Cancellation or an earlier
+whole-run deadline stops both commands and backoff waits.
+
+Retries require a failed Git/LFS command with a recognized diagnostic: connection
+reset/refused/timed out/closed, broken pipe, unreachable network or no route,
+temporary name-resolution failure, unexpected disconnect/remote hangup, early EOF,
+improper TLS termination, or HTTP 429/500/502/503/504. Authentication and host-key
+failures, missing repositories, rejected refs (including protected branches and
+non-fast-forward updates), corruption, and `could not resolve host` fail without
+retry. Permanent diagnostics take precedence over transient ones. Unrecognized
+errors, cancellation, and expired deadlines are not retried.
+
+Push retries use the same locked source snapshot; change counts describe only the
+final attempt, not cumulative changes. Pushes require atomic support by default,
+so a rejected ref leaves that destination's refs unchanged. Use `atomic: false`
+explicitly for a server that lacks support; a failed non-atomic push may have
+updated some refs. There is no transaction across destinations. A lost connection
+may occur after the server accepts a push, leaving its outcome uncertain. A
+recognized transient failure can still trigger a bounded retry against the same
+snapshot; a successful retry reconciles the refs and may report them as unchanged.
+If the command ultimately fails, the destination is reported failed even though
+remote refs may have changed. A later invocation can reconcile again.
+
+The application runs once and does not automatically retry the whole run or queue
+failed destinations for later. External callers (for example cron or a job runner)
+may rerun an incomplete job after inspecting its report/exit status. A new run
+refreshes each source again, so it may mirror a newer snapshot; it does not resume
+the previous run. Successful destinations tolerate repetition. External whole-run
+retries have their own scheduling policy, separate from the bounded command retries
+above.
 
 An empty source removes all deletable destination refs. If both sides have no refs,
 the tool checks the destination and reports success without issuing an empty push.
