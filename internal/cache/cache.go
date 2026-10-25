@@ -15,6 +15,7 @@ import (
 
 	"github.com/zekihan/git-mirrorer/internal/cachefs"
 	"github.com/zekihan/git-mirrorer/internal/git"
+	"github.com/zekihan/git-mirrorer/internal/safepath"
 )
 
 type Lease struct {
@@ -23,6 +24,8 @@ type Lease struct {
 	entry     string
 	source    string
 	limits    Limits
+	namespace *safepath.Snapshot
+	identity  *safepath.Snapshot
 	temporary atomic.Pointer[string]
 }
 
@@ -48,37 +51,39 @@ func Acquire(stateDir, source string) (*Lease, error) {
 		}
 	}
 	key := Key(source)
-	lockPath := filepath.Join(stateDir, "locks", key+".lock")
-	fd, err := syscall.Open(lockPath, syscall.O_CREAT|syscall.O_RDWR|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0o600)
+	locks, err := safepath.Open(filepath.Join(stateDir, "locks"), false)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = locks.Close() }()
+	file, err := locks.OpenFile(key+".lock", os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open cache lock: %w", err)
 	}
-	file := os.NewFile(uintptr(fd), lockPath)
 	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() {
+	if err != nil || !info.Mode().IsRegular() || safepath.Trusted(info, false) != nil || info.Sys().(*syscall.Stat_t).Nlink != 1 {
 		file.Close()
 		return nil, errors.New("cache lock is not a regular file")
 	}
-	if err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		file.Close()
 		return nil, fmt.Errorf("source cache is locked or locking is unavailable: %w", err)
 	}
 	entry := filepath.Join(stateDir, "repositories", key)
-	return &Lease{lock: file, Path: filepath.Join(entry, "repo.git"), entry: entry, source: source}, nil
+	namespace, err := safepath.Capture(filepath.Join(stateDir, "repositories"))
+	if err != nil {
+		file.Close()
+		return nil, err
+	}
+	return &Lease{namespace: namespace, lock: file, Path: filepath.Join(entry, "repo.git"), entry: entry, source: source}, nil
 }
 
 func ensureDirectory(path string) error {
-	if err := os.MkdirAll(path, 0o700); err != nil {
-		return err
-	}
-	info, err := os.Lstat(path)
+	root, err := safepath.Open(path, true)
 	if err != nil {
 		return err
 	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o022 != 0 {
-		return fmt.Errorf("managed path must be a real directory without group/other write access: %s", path)
-	}
-	return nil
+	return root.Close()
 }
 
 func (l *Lease) Close() error {
@@ -94,6 +99,14 @@ func (l *Lease) Prepare(ctx context.Context, client *git.Client) (cloned bool, p
 	if err := l.requireLock(); err != nil {
 		return false, err
 	}
+	if err := l.namespace.Check(); err != nil {
+		return false, err
+	}
+	if l.identity != nil {
+		if err := l.identity.Check(); err != nil {
+			return false, err
+		}
+	}
 	_, err := os.Lstat(l.entry)
 	if err == nil {
 		if err := l.validateMetadata(ctx); err != nil {
@@ -102,7 +115,8 @@ func (l *Lease) Prepare(ctx context.Context, client *git.Client) (cloned bool, p
 		if err := client.Validate(ctx, l.Path, l.source); err != nil {
 			return false, fmt.Errorf("invalid cache %s; remove this managed entry while idle to rebuild: %w", l.entry, err)
 		}
-		return false, nil
+		l.identity, err = safepath.Capture(l.entry)
+		return false, err
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return false, err
@@ -150,7 +164,8 @@ func (l *Lease) Prepare(ctx context.Context, client *git.Client) (cloned bool, p
 	if err := os.Rename(temp, l.entry); err != nil {
 		return false, err
 	}
-	return true, nil
+	l.identity, err = safepath.Capture(l.entry)
+	return true, err
 }
 
 func (l *Lease) validateMetadata(ctx context.Context) error {
@@ -165,11 +180,15 @@ func (l *Lease) validateMetadata(ctx context.Context) error {
 	if _, err := scan(ctx, l.entry, usage{limits.SourceBytes, limits.SourceEntries, limits.SourceObjects}); err != nil {
 		return err
 	}
-	fd, err := syscall.Open(filepath.Join(l.entry, "metadata.json"), syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
+	root, err := safepath.Open(l.entry, false)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	file, err := root.OpenFile("metadata.json", os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return fmt.Errorf("invalid cache ownership metadata: %w", err)
 	}
-	file := os.NewFile(uintptr(fd), "metadata.json")
 	defer file.Close()
 	data, err := io.ReadAll(io.LimitReader(file, 64*1024+1))
 	if err != nil || len(data) > 64*1024 {

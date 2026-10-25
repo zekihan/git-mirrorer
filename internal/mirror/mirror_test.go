@@ -381,6 +381,10 @@ func TestReclaimsDisjointGitAndLFSSnapshotsUnderLease(t *testing.T) {
 	cfg.Cache.SourceObjects = 100
 	runner := realRunner(t, cfg)
 	repoPath := filepath.Join(cfg.StateDir, "repositories", cache.Key(source), "repo.git")
+	sentinel := filepath.Join(dest1, "hook-executed")
+	if err := os.WriteFile(filepath.Join(dest1, "hooks", "update"), []byte("#!/bin/sh\nprintf executed > '"+sentinel+"'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	var previous, previousPayload string
 	for generation := range 4 {
 		if generation > 0 {
@@ -406,7 +410,10 @@ func TestReclaimsDisjointGitAndLFSSnapshotsUnderLease(t *testing.T) {
 		runner.Git = backend
 		result := runner.Run(t.Context())
 		if result.Outcome != Succeeded || result.Totals.Succeeded != 2 {
-			t.Fatalf("generation %d: %+v", generation, result)
+			t.Fatalf("generation %d: %+v source error: %+v", generation, result, result.Sources[0].Error)
+		}
+		if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
+			t.Fatal("reclamation/LFS fan-out executed local receive hook")
 		}
 		testutil.EqualRefs(t, source, dest1)
 		testutil.EqualRefs(t, source, dest2)
@@ -461,7 +468,7 @@ func TestLFSBudgetFailureBlocksGitPublication(t *testing.T) {
 	cfg.Cache.SourceBytes = 64 << 10
 	result := realRunner(t, cfg).Run(t.Context())
 	if result.Totals.Attempted != 0 || result.Totals.Skipped != 1 || result.Sources[0].Error == nil || result.Sources[0].Error.Stage != "lfs-fetch" || !strings.Contains(result.Sources[0].Error.Detail, "byte budget") {
-		t.Fatalf("oversize LFS snapshot published: %+v", result)
+		t.Fatalf("oversize LFS snapshot published: %+v source error: %+v", result, result.Sources[0].Error)
 	}
 	if testutil.Refs(t, dest) != "" {
 		t.Fatal("Git refs published despite oversized LFS payload")
@@ -470,5 +477,44 @@ func TestLFSBudgetFailureBlocksGitPublication(t *testing.T) {
 	result = realRunner(t, cfg).Run(t.Context())
 	if result.Totals.Attempted != 0 || result.Totals.Skipped != 1 {
 		t.Fatalf("oversize cache reused: %+v", result)
+	}
+}
+
+func TestLoadedEndpointIdentityPreventsPublication(t *testing.T) {
+	for _, replaceSource := range []bool{false, true} {
+		t.Run(fmt.Sprint(replaceSource), func(t *testing.T) {
+			testutil.Isolate(t)
+			source, destination := testutil.Repository(t, false), testutil.Repository(t, true)
+			testutil.Commit(t, source, "a", "one")
+			input := fmt.Sprintf("stateDir: %q\nrepositories:\n- name: fixture\n  source: %q\n  destinations:\n  - name: backup\n    url: %q\n", filepath.Join(t.TempDir(), "state"), source, destination)
+			cfg, err := config.Decode(strings.NewReader(input), t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			target := destination
+			if replaceSource {
+				target = source
+			}
+			if err := os.Rename(target, target+".old"); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(target, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			testutil.Git(t, target, "init", "--bare", "--initial-branch=main")
+			result := realRunner(t, cfg).Run(t.Context())
+			if result.Outcome != Failed {
+				t.Fatalf("accepted replaced endpoint: %+v", result)
+			}
+			if got := testutil.Refs(t, destination); got != "" {
+				t.Fatalf("published to replacement: %s", got)
+			}
+			if replaceSource && result.Sources[0].Error.Stage != "source-path" {
+				t.Fatalf("source was used: %+v", result)
+			}
+			if !replaceSource && result.Sources[0].Destinations[0].Error.Stage != "destination-path" {
+				t.Fatalf("destination was used: %+v", result)
+			}
+		})
 	}
 }

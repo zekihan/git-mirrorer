@@ -229,6 +229,37 @@ automatically deleted. A total-budget/inspection failure blocks new storage work
 until an operator restores capacity; source-only failures allow healthy sources
 to continue when the total cache still fits its budget.
 
+State directories, locks, cache entries and their contents must belong to the
+effective UID and have no group/other write permission. Every ancestor must be
+owned by that UID or root and have no group/other write permission, including
+sticky directories: state or local endpoints below `/tmp` are rejected. Existing
+trees are never silently chmodded. Directory checks descend through stable
+handles and inspect opened inodes. Completed caches reject symlinks, foreign-owned or writable
+files and executable/redirecting repository-local Git configuration; configure
+credential helpers in the trusted account configuration instead. Local Git LFS
+may hard-link payloads; each opened inode must still satisfy ownership/mode checks.
+
+Local sources and destinations follow the same ancestor policy; endpoint directories
+must belong to the effective UID. Existing symlink aliases are canonicalized at
+configuration load; symlinks introduced into that canonical path are rejected.
+Directory identities are recorded at load and checked before operations. A missing
+endpoint may pass offline validation, but creating it after load is an identity
+change: create local repositories before starting the mirrorer and reload the config.
+The policy assumes a local filesystem with Unix ownership/mode enforcement, no ACL
+or mount grants that give other principals write access, and trusted root and
+same-UID processes. It does not sandbox those trusted principals or defend against
+them changing paths between a check and Git opening them.
+
+Local destination receive hooks are disabled by default with a command-scoped
+`core.hooksPath` in the local receive-pack process. SSH/HTTPS destinations keep
+their remote hook behavior. To preserve local hooks, explicitly set
+`trustedLocalHooks: true` on that destination. This permits destination-controlled
+code to run as the mirrorer account with its inherited credentials: every writer
+of the destination and its hook/configuration namespace must be equally trusted.
+The option is rejected for remote destinations and does not bypass filesystem
+checks. Prefer a separately sandboxed SSH receive service for untrusted writers.
+No live trust settings or filesystem permissions are changed by this application.
+
 A cache is disposable. Invalid ownership, symlinks, partial/shallow repositories,
 and unexpected origins produce errors instead of automatic deletion. To recover,
 stop invocations that use that source and remove only its identified managed cache
@@ -249,7 +280,8 @@ The image contains Git, Git LFS, OpenSSH, and CA certificates, runs as UID 25090
 and exposes no ports. Compose mounts the config at `/data/git-mirrorer.yaml` and
 uses a named volume for `/data/.git-mirrorer`; it does not restart completed runs.
 If you change `stateDir`, update the mount accordingly. For bind-mounted state,
-make the directory writable by UID 25090.
+make the directory owned by UID 25090 and remove group/other write permissions.
+Every ancestor must satisfy the namespace policy above.
 
 Mount a dedicated SSH directory read-only at `/home/git-mirrorer/.ssh` with readable
 configuration/known_hosts and appropriately protected keys, or expose a compatible
@@ -269,6 +301,8 @@ make release-check    # validate GoReleaser config
 make container-test   # isolated local image build and smoke test
 ```
 
+The test Make targets use private temporary directories beneath `tmp/`. For direct
+`go test` invocations, set `TMPDIR` to a private directory under trusted ancestors.
 Tests create temporary local repositories and never use the user's configured
 remotes. Install Git LFS to run payload integration tests; CI requires it. Linux
 and macOS are supported; Windows binaries are not produced. CI pins golangci-lint

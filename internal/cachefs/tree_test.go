@@ -70,3 +70,23 @@ func TestCleanupNeverFollowsSymlinkAndWalkLimitsDepth(t *testing.T) {
 		t.Fatalf("depth bound: %v", err)
 	}
 }
+
+func TestPayloadHardlinksStillRequireTrustedInode(t *testing.T) {
+	root, external := t.TempDir(), t.TempDir()
+	source := filepath.Join(external, "payload")
+	if err := os.WriteFile(source, []byte("payload"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(source, filepath.Join(root, "payload")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Walk(t.Context(), root, 10, nil); err != nil {
+		t.Fatalf("trusted LFS payload hardlink: %v", err)
+	}
+	if err := os.Chmod(source, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Walk(t.Context(), root, 10, nil); err == nil {
+		t.Fatal("accepted writable payload inode through hardlink")
+	}
+}

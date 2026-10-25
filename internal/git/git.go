@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/zekihan/git-mirrorer/internal/safepath"
 	"time"
 
 	"github.com/zekihan/git-mirrorer/internal/cachefs"
@@ -25,7 +27,7 @@ type Changes struct {
 }
 
 func (c *Client) command(ctx context.Context, dir string, input io.Reader, output io.Writer, args ...string) error {
-	options := []string{"-c", "maintenance.auto=false", "-c", "gc.auto=0", "-c", "submodule.recurse=false"}
+	options := []string{"-c", "maintenance.auto=false", "-c", "gc.auto=0", "-c", "submodule.recurse=false", "-c", "core.hooksPath=" + os.DevNull}
 	return c.runner.Run(ctx, dir, input, output, append(options, args...)...)
 }
 
@@ -34,6 +36,9 @@ func (c *Client) CheckLFS(ctx context.Context) error {
 }
 
 func (c *Client) Clone(ctx context.Context, source, path string) error {
+	if err := checkLocalEndpoint(source); err != nil {
+		return err
+	}
 	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("clone destination must not exist")
 	}
@@ -53,6 +58,15 @@ func (c *Client) Clone(ctx context.Context, source, path string) error {
 
 func (c *Client) Validate(ctx context.Context, path, source string) error {
 	var output bytes.Buffer
+	err := c.command(ctx, path, nil, &output, "config", "--local", "--no-includes", "--name-only", "--get-regexp", `^(credential\..*|include.*|core\.(sshcommand|gitproxy|fsmonitor)|filter\..*|remote\..*\.(uploadpack|receivepack|vcs)|url\..*|alias\..*)$`)
+	var unsafeErr *CommandError
+	if err == nil || output.Len() > 0 {
+		return errors.New("executable or redirecting repository-local configuration is unsupported")
+	}
+	if !errors.As(err, &unsafeErr) || unsafeErr.ExitCode != 1 {
+		return err
+	}
+	output.Reset()
 	if err := c.command(ctx, path, nil, &output, "rev-parse", "--is-bare-repository", "--is-shallow-repository"); err != nil {
 		return err
 	}
@@ -67,7 +81,7 @@ func (c *Client) Validate(ctx context.Context, path, source string) error {
 		return errors.New("cache origin does not match configured source")
 	}
 	output.Reset()
-	err := c.command(ctx, path, nil, &output, "config", "--get-regexp", `^(extensions\.partialclone|remote\..*\.promisor)$`)
+	err = c.command(ctx, path, nil, &output, "config", "--get-regexp", `^(extensions\.partialclone|remote\..*\.promisor)$`)
 	var commandErr *CommandError
 	if err == nil || output.Len() > 0 {
 		return errors.New("partial/promisor caches are unsupported")
@@ -82,12 +96,18 @@ func (c *Client) Validate(ctx context.Context, path, source string) error {
 }
 
 func (c *Client) Fetch(ctx context.Context, path, source string) error {
+	if err := checkLocalEndpoint(source); err != nil {
+		return err
+	}
 	return c.retry(ctx, func(ctx context.Context) error {
 		return c.command(ctx, path, nil, nil, "fetch", "--atomic", "--prune", "--no-tags", "--no-recurse-submodules", "--", source, "+refs/*:refs/*")
 	})
 }
 
 func (c *Client) Push(ctx context.Context, path, destination string, atomic bool) (Changes, error) {
+	if err := checkLocalEndpoint(destination); err != nil {
+		return Changes{}, err
+	}
 	var local bytes.Buffer
 	if err := c.command(ctx, path, nil, &local, "for-each-ref", "--count=1", "--format=%(refname)", "refs/"); err != nil {
 		return Changes{}, err
@@ -107,6 +127,9 @@ func (c *Client) Push(ctx context.Context, path, destination string, atomic bool
 		}
 	}
 	args := []string{"push", "--mirror", "--porcelain", "--no-recurse-submodules"}
+	if filepath.IsAbs(destination) && ctx.Value(trustedLocalHooksKey{}) != true {
+		args = append(args, "--receive-pack=git -c core.hooksPath="+os.DevNull+" receive-pack")
+	}
 	if atomic {
 		args = append(args, "--atomic")
 	}
@@ -177,6 +200,9 @@ func (p *pushParser) finish() {
 }
 
 func (c *Client) LFSFetch(ctx context.Context, path, source string) error {
+	if err := checkLocalEndpoint(source); err != nil {
+		return err
+	}
 	if err := c.prepareLFS(ctx, path); err != nil {
 		return err
 	}
@@ -188,6 +214,9 @@ func (c *Client) LFSFetch(ctx context.Context, path, source string) error {
 }
 
 func (c *Client) LFSPush(ctx context.Context, path, destination string) error {
+	if err := checkLocalEndpoint(destination); err != nil {
+		return err
+	}
 	if err := c.prepareLFS(ctx, path); err != nil {
 		return err
 	}
@@ -248,6 +277,25 @@ func (c *Client) checkLFSConfig(ctx context.Context, path string) error {
 		return fmt.Errorf("check LFS repository configuration: %w", err)
 	}
 	return nil
+}
+
+type trustedLocalHooksKey struct{}
+
+// WithTrustedLocalHooks enables destination-controlled code as the service UID.
+// Only use for an explicitly opted-in, trust-equivalent local destination.
+func WithTrustedLocalHooks(ctx context.Context) context.Context {
+	return context.WithValue(ctx, trustedLocalHooksKey{}, true)
+}
+
+func checkLocalEndpoint(address string) error {
+	if !filepath.IsAbs(address) {
+		return nil
+	}
+	root, err := safepath.Open(address, false)
+	if err != nil {
+		return fmt.Errorf("untrusted local repository: %w", err)
+	}
+	return root.Close()
 }
 
 // Reclaim runs only while the caller holds the source lease, before fan-out.

@@ -131,6 +131,75 @@ func canonicalTemp(t *testing.T) string {
 	return path
 }
 
+func TestLocalPathChangesAfterLoad(t *testing.T) {
+	for _, endpoint := range []string{"source.git", "backup.git"} {
+		for _, change := range []string{"endpoint", "ancestor", "writable ancestor", "missing endpoint"} {
+			t.Run(endpoint+"/"+change, func(t *testing.T) {
+				base := filepath.Join(canonicalTemp(t), "namespace")
+				if err := os.Mkdir(base, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				for _, name := range []string{"source.git", "backup.git"} {
+					if change == "missing endpoint" && name == endpoint {
+						continue
+					}
+					if err := os.Mkdir(filepath.Join(base, name), 0o700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				cfg, err := Decode(strings.NewReader(validYAML), base)
+				if err != nil {
+					t.Fatal(err)
+				}
+				target := filepath.Join(base, endpoint)
+				switch change {
+				case "endpoint":
+					if err := os.Rename(target, target+".old"); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Mkdir(target, 0o700); err != nil {
+						t.Fatal(err)
+					}
+				case "ancestor":
+					if err := os.Rename(base, base+".old"); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.MkdirAll(target, 0o700); err != nil {
+						t.Fatal(err)
+					}
+				case "writable ancestor":
+					if err := os.Chmod(base, 0o777); err != nil {
+						t.Fatal(err)
+					}
+				case "missing endpoint":
+					if err := os.Mkdir(target, 0o700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := cfg.CheckLocalPath(target); err == nil {
+					t.Fatal("accepted changed path")
+				}
+			})
+		}
+	}
+}
+
+func TestTrustedLocalHooksPolicy(t *testing.T) {
+	cfg, err := Decode(strings.NewReader(validYAML+"        trustedLocalHooks: true\n"), canonicalTemp(t))
+	if err != nil || !cfg.Repositories[0].Destinations[0].TrustedLocalHooks {
+		t.Fatalf("local opt-in: %v", err)
+	}
+	for _, remote := range []string{"ssh://git@example.invalid/backup.git", "https://example.invalid/backup.git"} {
+		input := strings.ReplaceAll(validYAML, "./backup.git", remote)
+		if _, err := Decode(strings.NewReader(input), canonicalTemp(t)); err != nil {
+			t.Fatalf("remote default: %v", err)
+		}
+		if _, err := Decode(strings.NewReader(input+"        trustedLocalHooks: true\n"), canonicalTemp(t)); err == nil {
+			t.Fatal("accepted remote-only opt-in")
+		}
+	}
+}
+
 func TestCachePolicyDefaultsOverridesAndValidation(t *testing.T) {
 	cfg, err := Decode(strings.NewReader(validYAML), canonicalTemp(t))
 	if err != nil || cfg.Cache.SourceBytes != 5<<30 || cfg.Cache.TotalBytes != 20<<30 || cfg.Cache.SourceEntries != 250_000 || cfg.Cache.ValidationTimeout.String() != "10s" {

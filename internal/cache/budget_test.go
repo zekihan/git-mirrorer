@@ -223,3 +223,32 @@ func TestCleanupRequiresLiveSourceLease(t *testing.T) {
 		t.Fatalf("unleased cleanup touched payload: %q %v", got, err)
 	}
 }
+
+func TestAccountingLockRejectsUnsafeModeAndHardlink(t *testing.T) {
+	for _, kind := range []string{"mode", "hardlink"} {
+		t.Run(kind, func(t *testing.T) {
+			state := t.TempDir()
+			lease, err := Acquire(state, "source")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer lease.Close()
+			path := filepath.Join(state, "locks", "budget.lock")
+			if err := os.WriteFile(path, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if kind == "mode" {
+				if err := os.Chmod(path, 0o666); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.Link(path, path+".alias"); err != nil {
+				t.Fatal(err)
+			}
+			called := false
+			err = lease.Mutate(t.Context(), DefaultLimits(), time.Second, func(context.Context) error { called = true; return nil })
+			if err == nil || called {
+				t.Fatalf("unsafe accounting lock used: %v %v", called, err)
+			}
+		})
+	}
+}

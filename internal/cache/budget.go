@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/zekihan/git-mirrorer/internal/cachefs"
+	"github.com/zekihan/git-mirrorer/internal/safepath"
 )
 
 // Limits bound retained storage and the work needed to inspect it. Bytes are
@@ -144,16 +145,21 @@ func (l *Lease) Mutate(ctx context.Context, limits Limits, timeout time.Duration
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	path := filepath.Join(filepath.Dir(filepath.Dir(l.entry)), "locks", "budget.lock")
-	fd, err := syscall.Open(path, syscall.O_CREAT|syscall.O_RDWR|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0o600)
+	locks, err := safepath.Open(filepath.Join(filepath.Dir(filepath.Dir(l.entry)), "locks"), false)
 	if err != nil {
 		return err
 	}
-	file := os.NewFile(uintptr(fd), path)
-	defer file.Close()
-	if info, err := file.Stat(); err != nil || !info.Mode().IsRegular() {
-		return errors.New("budget lock is not a regular file")
+	defer func() { _ = locks.Close() }()
+	file, err := locks.OpenFile("budget.lock", os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
+	if err != nil {
+		return err
 	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || safepath.Trusted(info, false) != nil || info.Sys().(*syscall.Stat_t).Nlink != 1 {
+		return errors.New("budget lock must be a private regular file")
+	}
+	fd := int(file.Fd())
 	for {
 		err := syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB)
 		if err == nil {

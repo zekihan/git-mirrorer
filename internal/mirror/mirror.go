@@ -243,7 +243,14 @@ func (r *Runner) runSource(ctx context.Context, repo config.Repository) (result 
 	if r.Logger != nil {
 		r.Logger.InfoContext(ctx, "Refreshing source", "source", repo.Name)
 	}
-	path, release, stage, err := r.Git.Prepare(ctx, repo.Source)
+	var path, stage string
+	var release func() error
+	err := r.Config.CheckLocalPath(repo.Source)
+	if err != nil {
+		stage = "source-path"
+	} else {
+		path, release, stage, err = r.Git.Prepare(ctx, repo.Source)
+	}
 	if release != nil {
 		defer func() {
 			if err := release(); err != nil {
@@ -252,7 +259,10 @@ func (r *Runner) runSource(ctx context.Context, repo config.Repository) (result 
 		}()
 	}
 	if err == nil && repo.LFS {
-		stage, err = "lfs-fetch", r.Git.LFSFetch(ctx, path, repo.Source)
+		stage, err = "source-path", r.Config.CheckLocalPath(repo.Source)
+		if err == nil {
+			stage, err = "lfs-fetch", r.Git.LFSFetch(ctx, path, repo.Source)
+		}
 	}
 	if err != nil {
 		result.Outcome, result.Refresh, result.Error = Failed, Failed, failure(stage, err)
@@ -276,13 +286,17 @@ func (r *Runner) runSource(ctx context.Context, repo config.Repository) (result 
 			}
 			destStart := time.Now()
 			destination.Attempted = true
-			stage, err = "push", nil
-			if repo.LFS {
-				stage, err = "lfs-push", r.Git.LFSPush(ctx, path, dest.URL)
+			operationCtx := ctx
+			if dest.TrustedLocalHooks {
+				operationCtx = git.WithTrustedLocalHooks(ctx)
+			}
+			stage, err = "destination-path", r.Config.CheckLocalPath(dest.URL)
+			if err == nil && repo.LFS {
+				stage, err = "lfs-push", r.Git.LFSPush(operationCtx, path, dest.URL)
 			}
 			if err == nil {
 				stage = "push"
-				destination.Changes, err = r.Git.Push(ctx, path, dest.URL, dest.AtomicEnabled())
+				destination.Changes, err = r.Git.Push(operationCtx, path, dest.URL, dest.AtomicEnabled())
 			}
 			destination.Duration = time.Since(destStart)
 			if err != nil {
