@@ -36,3 +36,41 @@ func TestReportOutputAndWriteFailure(t *testing.T) {
 		}
 	}
 }
+
+func TestUntrustedDetailsStayInOneTextRecord(t *testing.T) {
+	detail := "token=SUPERSECRET\nforged: success\r\x1b[2J\x1b]0;title\a\x00\x7f\u0085\u202e\u2028\u2029\xff"
+	failure := &mirror.Failure{Code: "fetch", Detail: detail}
+	value := mirror.Report{Outcome: mirror.Failed, Error: failure, Sources: []mirror.SourceResult{{
+		Name: "source", Outcome: mirror.Failed, Error: failure,
+		Destinations: []mirror.DestinationResult{{Name: "destination", Outcome: mirror.Failed, Error: failure}},
+	}}}
+	var buffer bytes.Buffer
+	if err := Write(&buffer, "text", value); err != nil {
+		t.Fatal(err)
+	}
+	got := buffer.String()
+	if strings.Count(got, "\n") != 4 || strings.Contains(got, "SUPERSECRET") {
+		t.Fatalf("forged record or secret in report: %q", got)
+	}
+	for _, escape := range []string{`\nforged: success\r`, `\x1b[2J`, `\x1b]0;title\a`, `\x00`, `\x7f`, `\u0085`, `\u202e`, `\u2028`, `\u2029`, `\xff`} {
+		if strings.Count(got, escape) != 3 {
+			t.Errorf("missing visible escape %q: %q", escape, got)
+		}
+	}
+}
+
+func TestJSONPreservesStructuredDiagnostic(t *testing.T) {
+	detail := "multiline\n\r\x1b[2J\x1b]0;title\a\x00\x7f\u0085\u202e"
+	value := mirror.Report{Error: &mirror.Failure{Detail: detail}}
+	var buffer bytes.Buffer
+	if err := Write(&buffer, "json", value); err != nil {
+		t.Fatal(err)
+	}
+	var decoded mirror.Report
+	if err := json.Unmarshal(buffer.Bytes(), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Error.Detail != detail || bytes.Contains(buffer.Bytes(), []byte{0x1b}) {
+		t.Fatal("JSON changed diagnostic value or emitted a literal ESC")
+	}
+}
