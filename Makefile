@@ -22,11 +22,16 @@ lint:
 	golangci-lint run
 
 test:
-	$(GO) test -race -count=1 ./...
+	@mkdir -p tmp
+	@fixture_dir=$$(mktemp -d "$(CURDIR)/tmp/test.XXXXXX"); \
+	trap 'rm -rf "$$fixture_dir"' EXIT HUP INT TERM; \
+	TMPDIR="$$fixture_dir" $(GO) test -race -count=1 ./...
 
 test/cover:
 	mkdir -p tmp
-	$(GO) test -race -coverprofile=tmp/coverage.out ./...
+	@fixture_dir=$$(mktemp -d "$(CURDIR)/tmp/cover.XXXXXX"); \
+	trap 'rm -rf "$$fixture_dir"' EXIT HUP INT TERM; \
+	TMPDIR="$$fixture_dir" $(GO) test -race -coverprofile=tmp/coverage.out ./...
 
 audit: lint test
 	$(GO) mod verify

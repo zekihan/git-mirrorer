@@ -81,7 +81,7 @@ func TestAtomicAndPartialPush(t *testing.T) {
 	if err := c.Clone(t.Context(), source, cache); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Push(t.Context(), cache, dest, true); err != nil {
+	if _, err := c.Push(WithTrustedLocalHooks(t.Context()), cache, dest, true); err != nil {
 		t.Fatal(err)
 	}
 	before := testutil.Refs(t, dest)
@@ -94,13 +94,13 @@ func TestAtomicAndPartialPush(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dest, "hooks", "update"), []byte(hook), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Push(t.Context(), cache, dest, true); err == nil {
+	if _, err := c.Push(WithTrustedLocalHooks(t.Context()), cache, dest, true); err == nil {
 		t.Fatal("atomic push unexpectedly succeeded")
 	}
 	if got := testutil.Refs(t, dest); got != before {
 		t.Fatal("atomic rejection modified refs")
 	}
-	changes, err := c.Push(t.Context(), cache, dest, false)
+	changes, err := c.Push(WithTrustedLocalHooks(t.Context()), cache, dest, false)
 	if err == nil || changes.Rejected == 0 || changes.Updated == 0 {
 		t.Fatalf("partial push: %+v %v", changes, err)
 	}
@@ -111,10 +111,10 @@ func TestAtomicAndPartialPush(t *testing.T) {
 		t.Fatal(err)
 	}
 	testutil.Git(t, dest, "config", "receive.advertiseAtomic", "false")
-	if _, err := c.Push(t.Context(), cache, dest, true); err == nil {
+	if _, err := c.Push(WithTrustedLocalHooks(t.Context()), cache, dest, true); err == nil {
 		t.Fatal("atomic unsupported must fail")
 	}
-	if _, err := c.Push(t.Context(), cache, dest, false); err != nil {
+	if _, err := c.Push(WithTrustedLocalHooks(t.Context()), cache, dest, false); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -178,5 +178,39 @@ func TestStreamingPushParser(t *testing.T) {
 	}
 	if p.changes != (Changes{Created: 1, Updated: 1, Deleted: 1, Unchanged: 1, Rejected: 1}) {
 		t.Fatalf("%+v", p.changes)
+	}
+}
+
+func TestLocalReceiveHooksRequireExplicitTrust(t *testing.T) {
+	testutil.Isolate(t)
+	source := testutil.Repository(t, false)
+	testutil.Commit(t, source, "a", "one")
+	client := newClient(t)
+	cache := filepath.Join(t.TempDir(), "mirror.git")
+	if err := client.Clone(t.Context(), source, cache); err != nil {
+		t.Fatal(err)
+	}
+	for _, trusted := range []bool{false, true} {
+		destination := testutil.Repository(t, true)
+		sentinel := filepath.Join(destination, "hook-executed")
+		hook := "#!/bin/sh\nprintf executed > '" + sentinel + "'\n"
+		if err := os.WriteFile(filepath.Join(destination, "hooks", "update"), []byte(hook), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		ctx := t.Context()
+		if trusted {
+			ctx = WithTrustedLocalHooks(ctx)
+		}
+		if _, err := client.Push(ctx, cache, destination, true); err != nil {
+			t.Fatal(err)
+		}
+		testutil.EqualRefs(t, source, destination)
+		_, err := os.Stat(sentinel)
+		if trusted && err != nil {
+			t.Fatal("explicitly trusted hook did not execute", err)
+		}
+		if !trusted && !os.IsNotExist(err) {
+			t.Fatal("default mode executed destination hook")
+		}
 	}
 }

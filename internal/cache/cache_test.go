@@ -149,3 +149,63 @@ func TestRejectSymlinkLocksAndDirectories(t *testing.T) {
 		})
 	}
 }
+
+func TestRejectUntrustedCacheAndExecutableConfig(t *testing.T) {
+	testutil.Isolate(t)
+	source := testutil.Repository(t, false)
+	testutil.Commit(t, source, "a", "one")
+	client, err := git.New(t.Context(), 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := t.TempDir()
+	lease, err := Acquire(state, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Close()
+	if _, err := lease.Prepare(t.Context(), client); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(t.TempDir(), "helper-executed")
+	testutil.Git(t, lease.Path, "config", "credential.helper", "!touch '"+sentinel+"'")
+	for _, target := range []string{state, filepath.Dir(state), filepath.Join(state, "locks"), filepath.Join(state, "repositories"), lease.entry, lease.Path, filepath.Join(lease.Path, "config")} {
+		info, err := os.Stat(target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(target, 0o777); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := lease.Prepare(t.Context(), client); err == nil {
+			t.Fatalf("accepted writable %s", target)
+		}
+		if err := os.Chmod(target, info.Mode()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := lease.Prepare(t.Context(), client); err == nil || !strings.Contains(err.Error(), "repository-local configuration") {
+		t.Fatalf("accepted shell helper: %v", err)
+	}
+	if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
+		t.Fatal("credential helper executed")
+	}
+	testutil.Git(t, lease.Path, "config", "--unset", "credential.helper")
+	if err := os.Rename(lease.entry, lease.entry+".old"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(lease.entry, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	testutil.Git(t, "", "clone", "--mirror", "--no-local", source, lease.Path)
+	data, err := os.ReadFile(filepath.Join(lease.entry+".old", "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(lease.entry, "metadata.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lease.Prepare(t.Context(), client); err == nil {
+		t.Fatal("accepted replaced matching cache")
+	}
+}

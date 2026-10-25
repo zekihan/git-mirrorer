@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -330,5 +331,44 @@ func TestCacheLockConflictAndInvalidCache(t *testing.T) {
 	result = runner.Run(t.Context())
 	if result.Sources[0].Error.Stage != "cache" || result.Totals.Attempted != 0 {
 		t.Fatal(result)
+	}
+}
+
+func TestLoadedEndpointIdentityPreventsPublication(t *testing.T) {
+	for _, replaceSource := range []bool{false, true} {
+		t.Run(fmt.Sprint(replaceSource), func(t *testing.T) {
+			testutil.Isolate(t)
+			source, destination := testutil.Repository(t, false), testutil.Repository(t, true)
+			testutil.Commit(t, source, "a", "one")
+			input := fmt.Sprintf("stateDir: %q\nrepositories:\n- name: fixture\n  source: %q\n  destinations:\n  - name: backup\n    url: %q\n", filepath.Join(t.TempDir(), "state"), source, destination)
+			cfg, err := config.Decode(strings.NewReader(input), t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			target := destination
+			if replaceSource {
+				target = source
+			}
+			if err := os.Rename(target, target+".old"); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(target, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			testutil.Git(t, target, "init", "--bare", "--initial-branch=main")
+			result := realRunner(t, cfg).Run(t.Context())
+			if result.Outcome != Failed {
+				t.Fatalf("accepted replaced endpoint: %+v", result)
+			}
+			if got := testutil.Refs(t, destination); got != "" {
+				t.Fatalf("published to replacement: %s", got)
+			}
+			if replaceSource && result.Sources[0].Error.Stage != "source-path" {
+				t.Fatalf("source was used: %+v", result)
+			}
+			if !replaceSource && result.Sources[0].Destinations[0].Error.Stage != "destination-path" {
+				t.Fatalf("destination was used: %+v", result)
+			}
+		})
 	}
 }

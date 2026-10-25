@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/zekihan/git-mirrorer/internal/safepath"
 	"gopkg.in/yaml.v3"
 )
 
@@ -21,6 +22,7 @@ type Config struct {
 	RunTimeout       time.Duration `yaml:"runTimeout"`
 	LogLevel         string        `yaml:"logLevel"`
 	Repositories     []Repository  `yaml:"repositories"`
+	localPaths       map[string]*safepath.Snapshot
 }
 
 type Repository struct {
@@ -31,9 +33,10 @@ type Repository struct {
 }
 
 type Destination struct {
-	Name   string `yaml:"name"`
-	URL    string `yaml:"url"`
-	Atomic *bool  `yaml:"atomic"`
+	Name              string `yaml:"name"`
+	URL               string `yaml:"url"`
+	Atomic            *bool  `yaml:"atomic"`
+	TrustedLocalHooks bool   `yaml:"trustedLocalHooks"`
 }
 
 func (d Destination) AtomicEnabled() bool { return d.Atomic == nil || *d.Atomic }
@@ -93,6 +96,7 @@ func (c *Config) validate(base string) error {
 	if len(c.Repositories) == 0 {
 		return errors.New("repositories must not be empty")
 	}
+	c.localPaths = make(map[string]*safepath.Snapshot)
 	names, sources, destinations := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for i := range c.Repositories {
 		repo := &c.Repositories[i]
@@ -123,6 +127,9 @@ func (c *Config) validate(base string) error {
 			if err != nil {
 				return fmt.Errorf("%s.destinations[%d].url: %w", field, j, err)
 			}
+			if dest.TrustedLocalHooks && !filepath.IsAbs(dest.URL) {
+				return fmt.Errorf("%s.destinations[%d].trustedLocalHooks requires a local destination", field, j)
+			}
 			if destinations[dest.URL] {
 				return fmt.Errorf("%s.destinations[%d].url is already owned by a destination", field, j)
 			}
@@ -137,6 +144,17 @@ func (c *Config) validate(base string) error {
 	return nil
 }
 
+func (c Config) CheckLocalPath(address string) error {
+	if snapshot := c.localPaths[address]; snapshot != nil {
+		return snapshot.Check()
+	}
+	if filepath.IsAbs(address) {
+		_, err := safepath.Capture(address)
+		return err
+	}
+	return nil
+}
+
 func (c Config) address(base, value string) (string, error) {
 	address, local, err := Address(base, value)
 	if err != nil {
@@ -144,6 +162,13 @@ func (c Config) address(base, value string) (string, error) {
 	}
 	if local && (within(address, c.StateDir) || within(c.StateDir, address)) {
 		return "", errors.New("repository path overlaps stateDir")
+	}
+	if local {
+		snapshot, err := safepath.Capture(address)
+		if err != nil {
+			return "", fmt.Errorf("untrusted local repository path: %w", err)
+		}
+		c.localPaths[address] = snapshot
 	}
 	return address, nil
 }
