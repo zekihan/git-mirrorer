@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 
+	"github.com/zekihan/git-mirrorer/internal/cachefs"
 	"github.com/zekihan/git-mirrorer/internal/git"
 	"github.com/zekihan/git-mirrorer/internal/safepath"
 )
@@ -20,8 +23,10 @@ type Lease struct {
 	Path      string
 	entry     string
 	source    string
+	limits    Limits
 	namespace *safepath.Snapshot
 	identity  *safepath.Snapshot
+	temporary atomic.Pointer[string]
 }
 
 type metadata struct {
@@ -87,8 +92,13 @@ func (l *Lease) Close() error {
 	return l.lock.Close()
 }
 
+func (l *Lease) SetLimits(limits Limits) { l.limits = limits }
+
 // Prepare returns true when a clone already supplied this run's source snapshot.
-func (l *Lease) Prepare(ctx context.Context, client *git.Client) (bool, error) {
+func (l *Lease) Prepare(ctx context.Context, client *git.Client) (cloned bool, prepareErr error) {
+	if err := l.requireLock(); err != nil {
+		return false, err
+	}
 	if err := l.namespace.Check(); err != nil {
 		return false, err
 	}
@@ -115,7 +125,19 @@ func (l *Lease) Prepare(ctx context.Context, client *git.Client) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer os.RemoveAll(temp)
+	l.temporary.Store(&temp)
+	defer l.temporary.Store(nil)
+	defer func() {
+		limits := l.limits
+		if limits == (Limits{}) {
+			limits = DefaultLimits()
+		}
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), limits.ValidationTimeout)
+		defer cancel()
+		if err := cachefs.RemoveTree(cleanupCtx, temp, limits.SourceEntries); err != nil {
+			prepareErr = errors.Join(prepareErr, fmt.Errorf("partial clone cleanup stopped; remove the abandoned temporary entry while idle: %w", err))
+		}
+	}()
 	repoPath := filepath.Join(temp, "repo.git")
 	if err := client.Clone(ctx, l.source, repoPath); err != nil {
 		return false, &RefreshError{Err: err}
@@ -130,6 +152,15 @@ func (l *Lease) Prepare(ctx context.Context, client *git.Client) (bool, error) {
 	if err := os.WriteFile(filepath.Join(temp, "metadata.json"), data, 0o600); err != nil {
 		return false, err
 	}
+	limits := l.limits
+	if limits == (Limits{}) {
+		limits = DefaultLimits()
+	}
+	inspectCtx, cancel := context.WithTimeout(ctx, limits.ValidationTimeout)
+	defer cancel()
+	if _, err := scan(inspectCtx, temp, usage{limits.SourceBytes, limits.SourceEntries, limits.SourceObjects}); err != nil {
+		return false, err
+	}
 	if err := os.Rename(temp, l.entry); err != nil {
 		return false, err
 	}
@@ -138,18 +169,30 @@ func (l *Lease) Prepare(ctx context.Context, client *git.Client) (bool, error) {
 }
 
 func (l *Lease) validateMetadata(ctx context.Context) error {
-	// Validate every descendant through stable descriptors before invoking Git.
+	// Validation always has a deadline and a finite entry budget, even when
+	// runTimeout is disabled. Read ownership metadata with a fixed size bound.
+	limits := l.limits
+	if limits == (Limits{}) {
+		limits = DefaultLimits()
+	}
+	ctx, cancel := context.WithTimeout(ctx, limits.ValidationTimeout)
+	defer cancel()
+	if _, err := scan(ctx, l.entry, usage{limits.SourceBytes, limits.SourceEntries, limits.SourceObjects}); err != nil {
+		return err
+	}
 	root, err := safepath.Open(l.entry, false)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = root.Close() }()
-	if err := validateTree(ctx, root); err != nil {
-		return err
-	}
-	data, err := root.ReadFile("metadata.json")
+	file, err := root.OpenFile("metadata.json", os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return fmt.Errorf("invalid cache ownership metadata: %w", err)
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, 64*1024+1))
+	if err != nil || len(data) > 64*1024 {
+		return errors.New("invalid cache ownership metadata size")
 	}
 	var meta metadata
 	if err := json.Unmarshal(data, &meta); err != nil || meta.Version != 1 || meta.Source != l.source {
@@ -162,48 +205,22 @@ func (l *Lease) validateMetadata(ctx context.Context) error {
 	return nil
 }
 
-func validateTree(ctx context.Context, root *os.Root) error {
-	dir, err := root.Open(".")
-	if err != nil {
-		return err
+// ForPath supplies accounting for a path whose source lease is already held.
+func ForPath(path string) *Lease { return &Lease{Path: path, entry: filepath.Dir(path)} }
+
+func (l *Lease) requireLock() error {
+	if l.lock == nil {
+		return errors.New("source lease is required")
 	}
-	defer dir.Close()
-	entries, err := dir.ReadDir(-1)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			return errors.New("symlinked cache entry")
-		}
-		file, err := root.OpenFile(entry.Name(), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
-		if err != nil {
-			return err
-		}
-		info, err := file.Stat()
-		file.Close()
-		if err != nil {
-			return err
-		}
-		if err := safepath.Trusted(info, false); err != nil {
-			return err
-		}
-		if info.IsDir() {
-			child, err := root.OpenRoot(entry.Name())
-			if err != nil {
-				return err
-			}
-			err = validateTree(ctx, child)
-			_ = child.Close()
-			if err != nil {
-				return err
-			}
-		} else if !info.Mode().IsRegular() || info.Sys().(*syscall.Stat_t).Nlink != 1 {
-			return errors.New("cache entries must be private regular files or directories")
-		}
+	if _, err := l.lock.Stat(); err != nil {
+		return fmt.Errorf("source lease is closed: %w", err)
 	}
 	return nil
+}
+
+func (l *Lease) Reclaim(ctx context.Context, client *git.Client) error {
+	if err := l.requireLock(); err != nil {
+		return err
+	}
+	return client.Reclaim(ctx, l.Path)
 }

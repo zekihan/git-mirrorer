@@ -35,6 +35,15 @@ concurrency: 4
 operationTimeout: 10m
 runTimeout: 0s
 logLevel: info
+cache:
+  sourceBytes: 5368709120
+  totalBytes: 21474836480
+  sourceEntries: 250000
+  totalEntries: 1000000
+  sourceObjects: 2000000
+  totalObjects: 8000000
+  reserveBytes: 1073741824
+  validationTimeout: 10s
 repositories:
   - name: example
     source: git@github.com:owner/example.git
@@ -79,17 +88,42 @@ A failed refresh never causes stale cached refs to be pushed. A failed destinati
 allows other destinations and sources to continue. Every result is reported in
 configuration order, even when sources run concurrently.
 
-Clone, fetch, push, and LFS transfers retry recognized transient connection failures
-up to three attempts total, waiting 1–1.5 seconds and then 2–3 seconds. Retries
-share the operation deadline and stop on cancellation. Authentication failures,
-rejected refs, and repository corruption fail immediately. Push retries use the
-same locked source snapshot; change counts describe the final attempt.
+### Command retries and whole-run retries
 
-Pushes require atomic support by default, so a rejected ref leaves that destination's
-refs unchanged. Use `atomic: false` explicitly for a server that lacks support;
-a failed non-atomic push may have updated some refs. There is no transaction across
-destinations. A lost connection may leave the outcome uncertain; rerun to reconcile.
-No application-level automatic retries are performed.
+Clone, fetch, push, LFS fetch/push, and the empty-source destination ref check
+retry recognized transient command failures up to three attempts total (the initial
+attempt plus at most two retries). Backoff waits are 1–1.5 seconds and then 2–3
+seconds. All attempts and waits for a network command share one
+`operationTimeout` budget; retries do not reset it. Cancellation or an earlier
+whole-run deadline stops both commands and backoff waits.
+
+Retries require a failed Git/LFS command with a recognized diagnostic: connection
+reset/refused/timed out/closed, broken pipe, unreachable network or no route,
+temporary name-resolution failure, unexpected disconnect/remote hangup, early EOF,
+improper TLS termination, or HTTP 429/500/502/503/504. Authentication and host-key
+failures, missing repositories, rejected refs (including protected branches and
+non-fast-forward updates), corruption, and `could not resolve host` fail without
+retry. Permanent diagnostics take precedence over transient ones. Unrecognized
+errors, cancellation, and expired deadlines are not retried.
+
+Push retries use the same locked source snapshot; change counts describe only the
+final attempt, not cumulative changes. Pushes require atomic support by default,
+so a rejected ref leaves that destination's refs unchanged. Use `atomic: false`
+explicitly for a server that lacks support; a failed non-atomic push may have
+updated some refs. There is no transaction across destinations. A lost connection
+may occur after the server accepts a push, leaving its outcome uncertain. A
+recognized transient failure can still trigger a bounded retry against the same
+snapshot; a successful retry reconciles the refs and may report them as unchanged.
+If the command ultimately fails, the destination is reported failed even though
+remote refs may have changed. A later invocation can reconcile again.
+
+The application runs once and does not automatically retry the whole run or queue
+failed destinations for later. External callers (for example cron or a job runner)
+may rerun an incomplete job after inspecting its report/exit status. A new run
+refreshes each source again, so it may mirror a newer snapshot; it does not resume
+the previous run. Successful destinations tolerate repetition. External whole-run
+retries have their own scheduling policy, separate from the bounded command retries
+above.
 
 An empty source removes all deletable destination refs. If both sides have no refs,
 the tool checks the destination and reports success without issuing an empty push.
@@ -101,6 +135,12 @@ the tool checks the destination and reports success without issuing an empty pus
 | 2 | Invalid configuration/arguments or unavailable prerequisite |
 | 130 | SIGINT |
 | 143 | SIGTERM |
+
+Failed commands retain at most 32 KiB of trailing diagnostics. A record cut by
+that limit is omitted through its next newline before credential redaction; a
+single line longer than the limit is omitted entirely. Text reports show control
+characters and invalid UTF-8 bytes as visible escapes, keeping each result on one
+physical line. JSON uses standard JSON string encoding for diagnostic details.
 
 Signals stop new work and terminate Git/SSH helper process groups. The final report
 includes skipped and canceled destinations. JSON uses `schemaVersion: 1`, RFC3339
@@ -121,8 +161,9 @@ payloads block that source; upload failures block only the affected destination.
 LFS transfers use standard endpoint discovery and authentication. Custom endpoint
 configuration, custom transfer adapters, and repositories containing `.lfsconfig`
 are unsupported and rejected. Each active source uses one LFS transfer at a time.
-There is no LFS/ref transaction, remote payload deletion, or cache pruning: a failed
-ref push may leave uploaded payloads on the destination. With `lfs: false`, ordinary
+There is no LFS/ref transaction or remote payload deletion: a failed ref push may
+leave uploaded payloads on the destination. Local LFS payloads are rebuilt for each
+refresh to avoid retaining obsolete generations. With `lfs: false`, ordinary
 Git pointer files are mirrored but their external payloads are not transferred.
 
 ## Authentication and cache
@@ -137,17 +178,66 @@ environment variables are removed and managed repository hooks are disabled.
 Caches live at `<stateDir>/repositories/<SHA-256 of source identity>/repo.git` with
 ownership metadata alongside them. Advisory locks live separately in `locks/`.
 Overlapping invocations sharing the same state directory fail contended sources
-rather than waiting. Shared storage must support advisory locks. Separate state
-directories cannot coordinate competing writers to the same destination.
+rather than waiting for a source lease. Shared storage must support advisory locks.
+Separate state directories cannot coordinate competing writers to the same destination.
+
+Cache limits are mandatory, positive values; omitted fields retain the defaults
+shown above. Byte limits count logical regular-file sizes, including Git, LFS,
+metadata, and temporary data. Entry limits include files and directories. Object
+limits count loose Git objects and every packed object, including duplicate copies
+during repacking. Total limits cover all entries under `repositories/`, including
+idle sources and abandoned clones; each total must be at least its source limit.
+`reserveBytes` preserves a sampled free-space margin for unrelated filesystem users.
+
+Before and after storage operations, and periodically during them, the tool checks
+these limits and the free-space reserve. A breach cancels the owned subprocess
+process group and blocks publication of an unvalidated source snapshot. Inspections
+stream batches of at most 128 directory entries, stop at the entry/object/byte
+budget, reject symlinks and special files, limit depth to 128, and use
+`validationTimeout` even with `runTimeout: 0s`. Metadata reads are capped at 64 KiB.
+A state-wide advisory budget lock serializes clone/fetch, reclamation, and LFS
+operations across processes. Lock waiting plus the complete storage operation is
+bounded by `operationTimeout`; interrupted clone cleanup has a separate bounded
+`validationTimeout` allowance. Cleanup also streams entries, stops at its entry
+budget, and may leave an abandoned temporary entry for operator recovery. Partial
+clone cleanup between retry attempts has a fixed 10-second/1,000,000-entry ceiling
+within the retry deadline. Git-only destination pushes can still run concurrently.
+All invocations sharing a state directory must use the same limits and this version
+of the tool. Existing state directories must not allow group/other write access.
+Keep state private to one trusted service account, on a filesystem supporting
+ordinary bounded local directory operations and advisory locks. Hostile local
+writers or filesystems that hang inside a system call are outside this model.
+
+After a successful Git refresh, while holding the source lease, the tool expires
+cache reflogs and runs foreground Git garbage collection with immediate pruning.
+It then removes this source's previous local LFS storage before fetching all
+payloads reachable from the refreshed refs. This costs repeated LFS downloads, but
+prevents disjoint generations accumulating indefinitely. Reclamation finishes
+before any destination is attempted; the snapshot and its complete LFS payloads
+remain intact through every destination, including after a destination fails.
+
+These are application budgets, **not hard filesystem quotas**: a subprocess can
+write beyond a limit between inspections (a 200 ms sampling timer,
+plus the bounded scan time and process shutdown). A fast transfer or repack can
+therefore consume the free-space reserve before cancellation. Use a dedicated
+filesystem/subvolume with byte and inode quotas, preferably per source, to enforce
+a strict allocation ceiling and protect unrelated jobs. Size budgets below those
+quotas with room for transfer/repack temporary data and normal filesystem overhead.
+No quota, mount, or deployment settings are changed by the executable. An entry
+left over budget by a canceled refresh fails closed on subsequent runs; it is not
+automatically deleted. A total-budget/inspection failure blocks new storage work
+until an operator restores capacity; source-only failures allow healthy sources
+to continue when the total cache still fits its budget.
 
 State directories, locks, cache entries and their contents must belong to the
 effective UID and have no group/other write permission. Every ancestor must be
 owned by that UID or root and have no group/other write permission, including
 sticky directories: state or local endpoints below `/tmp` are rejected. Existing
 trees are never silently chmodded. Directory checks descend through stable
-handles and inspect opened inodes. Completed caches reject symlinks, hard-linked
+handles and inspect opened inodes. Completed caches reject symlinks, foreign-owned or writable
 files and executable/redirecting repository-local Git configuration; configure
-credential helpers in the trusted account configuration instead.
+credential helpers in the trusted account configuration instead. Local Git LFS
+may hard-link payloads; each opened inode must still satisfy ownership/mode checks.
 
 Local sources and destinations follow the same ancestor policy; endpoint directories
 must belong to the effective UID. Existing symlink aliases are canonicalized at
@@ -191,7 +281,7 @@ and exposes no ports. Compose mounts the config at `/data/git-mirrorer.yaml` and
 uses a named volume for `/data/.git-mirrorer`; it does not restart completed runs.
 If you change `stateDir`, update the mount accordingly. For bind-mounted state,
 make the directory owned by UID 25090 and remove group/other write permissions.
-Every ancestor must satisfy the namespace policy below.
+Every ancestor must satisfy the namespace policy above.
 
 Mount a dedicated SSH directory read-only at `/home/git-mirrorer/.ssh` with readable
 configuration/known_hosts and appropriately protected keys, or expose a compatible

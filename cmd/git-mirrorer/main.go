@@ -120,7 +120,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (code int
 			break
 		}
 	}
-	runner := mirror.Runner{Config: cfg, Git: mirror.CachedGit{Client: client, StateDir: cfg.StateDir}, Logger: logger}
+	runner := mirror.Runner{Config: cfg, Git: mirror.CachedGit{Client: client, StateDir: cfg.StateDir, Limits: cfg.Cache, Timeout: cfg.OperationTimeout}, Logger: logger}
 	result := runner.Run(ctx)
 	if err := report.Write(stdout, *format, result); err != nil {
 		fmt.Fprintln(stderr, "write report:", redact.Text(err.Error()))

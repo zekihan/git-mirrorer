@@ -11,11 +11,13 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/zekihan/git-mirrorer/internal/cache"
 	"github.com/zekihan/git-mirrorer/internal/safepath"
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
+	Cache            cache.Limits  `yaml:"cache"`
 	StateDir         string        `yaml:"stateDir"`
 	Concurrency      int           `yaml:"concurrency"`
 	OperationTimeout time.Duration `yaml:"operationTimeout"`
@@ -55,7 +57,7 @@ func Load(filename string) (Config, error) {
 }
 
 func Decode(reader io.Reader, base string) (Config, error) {
-	cfg := Config{StateDir: ".git-mirrorer", Concurrency: 4, OperationTimeout: 10 * time.Minute, LogLevel: "info"}
+	cfg := Config{Cache: cache.DefaultLimits(), StateDir: ".git-mirrorer", Concurrency: 4, OperationTimeout: 10 * time.Minute, LogLevel: "info"}
 	decoder := yaml.NewDecoder(reader)
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&cfg); err != nil {
@@ -77,6 +79,9 @@ func validName(name string) bool {
 }
 
 func (c *Config) validate(base string) error {
+	if err := c.Cache.Validate(); err != nil {
+		return err
+	}
 	if c.Concurrency < 1 || c.OperationTimeout <= 0 || c.RunTimeout < 0 {
 		return errors.New("concurrency and operationTimeout must be positive; runTimeout must be nonnegative")
 	}

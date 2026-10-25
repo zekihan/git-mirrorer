@@ -3,6 +3,11 @@
 Status: implemented. The verification record at the end maps the design to tests
 and local delivery checks. No release has been published.
 
+Retry-policy update: the original no-command-retries decision below is superseded
+by the bounded command retries in `internal/git/retry.go`. The current policy is
+documented in [README: Command retries and whole-run retries](../README.md#command-retries-and-whole-run-retries);
+this plan retains the earlier decision as historical context.
+
 ## Objective
 
 Replace the current application with one executable that loads a configuration,
@@ -34,8 +39,16 @@ Implementation choices:
 - Support Linux and macOS first. Drop untested Windows release artifacts for this
   rewrite; Windows process-tree cancellation and file locking are separate work.
 - Keep an optional container image that runs the same one-shot command.
-- No automatic retry loop in the first version. A caller can rerun an incomplete
-  job; successful destinations tolerate repetition.
+- Historical decision (superseded): no automatic command retry loop in the first
+  version. The implementation now permits up to three attempts for recognized
+  transient network-command failures, sharing one operation deadline across
+  attempts and backoff waits and stopping on cancellation or the run deadline.
+  Authentication/host-key failures, missing repositories, rejected refs, corruption,
+  permanent DNS failures (`could not resolve host`), and unrecognized errors are
+  not retried; recognized conditions and diagnostic precedence are listed in the
+  README. There is still no automatic whole-run retry loop. An external caller
+  can rerun an incomplete job, which refreshes sources again rather than resuming
+  the previous snapshot; successful destinations tolerate repetition.
 - No database, durable work queue, web UI, metrics endpoint, or provider plugins.
 - No repository settings, default-branch settings, issues, releases, access rules,
   or recursive submodule synchronization. Submodule repositories need their own
@@ -183,9 +196,13 @@ See the official [git-push documentation](https://git-scm.com/docs/git-push).
 
 Fetch atomicity applies to local ref updates; push atomicity applies to one
 destination. There is no transaction spanning multiple destinations. A lost
-connection after a server accepts a push can leave its outcome uncertain: report
-failure/uncertainty and let a later invocation reconcile again. Pruning follows
-the explicit refspec. See [git-fetch](https://git-scm.com/docs/git-fetch).
+connection after a server accepts a push can leave its outcome uncertain. A
+recognized transient failure can trigger a bounded command retry using the same
+locked source snapshot. A successful retry reconciles refs; reported change counts
+cover only the final attempt, which may show unchanged refs. If the command
+ultimately fails, report the destination as failed even though refs may have
+changed; a later invocation can reconcile again. Pruning follows the explicit
+refspec. See [git-fetch](https://git-scm.com/docs/git-fetch).
 
 ## Bounded Git LFS support
 
@@ -435,4 +452,6 @@ Implementation refinements discovered through testing:
 
 Deliberate boundaries remain as designed: existing destinations only, advertised
 refs only, no provider settings, no custom LFS routing/transfer adapters or
-`.lfsconfig`, no remote LFS deletion, no retries/daemon, and no Windows artifacts.
+`.lfsconfig`, no remote LFS deletion, no automatic whole-run retries or daemon,
+and no Windows artifacts. The historical no-command-retries boundary is superseded
+by the bounded command retry policy linked above.
