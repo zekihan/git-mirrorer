@@ -151,14 +151,24 @@ func (r *Runner) Run(ctx context.Context, dir string, input io.Reader, output io
 }
 
 type tailBuffer struct {
-	mu   sync.Mutex
-	data []byte
+	mu      sync.Mutex
+	data    []byte
+	partial bool // the retained bytes start inside a truncated LF-delimited record
 }
 
 func (b *tailBuffer) Write(data []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	n := len(data)
+	// Track the byte immediately before the retained tail. Redaction requires
+	// the entire record, including any credential label or URL scheme.
+	if overflow := len(b.data) + n - diagnosticLimit; overflow > 0 {
+		if overflow <= len(b.data) {
+			b.partial = b.data[overflow-1] != '\n'
+		} else {
+			b.partial = data[overflow-len(b.data)-1] != '\n'
+		}
+	}
 	if len(data) >= diagnosticLimit {
 		b.data = append(b.data[:0], data[len(data)-diagnosticLimit:]...)
 	} else {
@@ -173,5 +183,15 @@ func (b *tailBuffer) Write(data []byte) (int, error) {
 func (b *tailBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return string(b.data)
+	data := b.data
+	if b.partial {
+		// A long record without a newline is omitted entirely. Never expose a
+		// suffix whose redaction context may have been discarded.
+		if end := bytes.IndexByte(data, '\n'); end >= 0 {
+			data = data[end+1:]
+		} else {
+			return ""
+		}
+	}
+	return string(data)
 }

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zekihan/git-mirrorer/internal/redact"
 	"github.com/zekihan/git-mirrorer/internal/testutil"
 )
 
@@ -136,5 +137,55 @@ func TestCommandEnvironmentAndSSHConfiguration(t *testing.T) {
 	c = newClient(t)
 	if !strings.Contains(strings.Join(c.runner.Env, "\n"), "GIT_SSH_COMMAND=ssh -i '/path with spaces/key' -o BatchMode=yes") {
 		t.Fatal("explicit SSH command lost")
+	}
+}
+
+func TestTailDropsTruncatedCredentialRecords(t *testing.T) {
+	for _, record := range []string{
+		"https://user:SUPERSECRET@example.com/repo",
+		"https://example.com/repo?access_token=SUPERSECRET",
+		"Authorization: Bearer SUPERSECRET", "Authorization: Basic SUPERSECRET",
+		"password=SUPERSECRET", "token: SUPERSECRET", "secret=SUPERSECRET",
+	} {
+		for cut := 0; cut <= len(record); cut++ {
+			// Place every byte of the credential record at the retention boundary.
+			input := "discarded\n" + record + "\nsafe record\n"
+			input += strings.Repeat("x", diagnosticLimit-(len(input)-len("discarded\n")-cut))
+			for _, split := range []int{0, len("discarded\n") + cut, len(input) - 1} {
+				var tail tailBuffer
+				for _, part := range []string{input[:split], input[split:]} {
+					n, err := tail.Write([]byte(part))
+					if n != len(part) || err != nil {
+						t.Fatalf("write: %d, %v", n, err)
+					}
+				}
+				got := redact.Text(tail.String())
+				if strings.Contains(got, "SUPERSECRET") || !strings.Contains(got, "safe record\n") {
+					t.Fatalf("record %q cut %d split %d: unsafe or missing record", record, cut, split)
+				}
+				if cut > 0 && strings.Contains(got, record[cut:]+"\n") && cut < len(record) {
+					t.Fatalf("partial record retained at cut %d", cut)
+				}
+			}
+		}
+	}
+}
+
+func TestTailLongRecordAndRecovery(t *testing.T) {
+	var tail tailBuffer
+	for range 3 {
+		_, _ = tail.Write([]byte(strings.Repeat("x", diagnosticLimit)))
+		if got := tail.String(); len(tail.data) > diagnosticLimit || (tail.partial && got != "") {
+			t.Fatal("long partial record retained or bound exceeded")
+		}
+	}
+	_, _ = tail.Write([]byte("SUPERSECRET\rstill same record\nsafe\n"))
+	if got := tail.String(); got != "safe\n" {
+		t.Fatalf("recovery after long record: %q", got)
+	}
+	var exact tailBuffer
+	_, _ = exact.Write([]byte(strings.Repeat("x", diagnosticLimit)))
+	if len(exact.String()) != diagnosticLimit {
+		t.Fatal("complete untruncated record was discarded")
 	}
 }

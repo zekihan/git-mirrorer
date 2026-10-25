@@ -127,6 +127,12 @@ the tool checks the destination and reports success without issuing an empty pus
 | 130 | SIGINT |
 | 143 | SIGTERM |
 
+Failed commands retain at most 32 KiB of trailing diagnostics. A record cut by
+that limit is omitted through its next newline before credential redaction; a
+single line longer than the limit is omitted entirely. Text reports show control
+characters and invalid UTF-8 bytes as visible escapes, keeping each result on one
+physical line. JSON uses standard JSON string encoding for diagnostic details.
+
 Signals stop new work and terminate Git/SSH helper process groups. The final report
 includes skipped and canceled destinations. JSON uses `schemaVersion: 1`, RFC3339
 timestamps, `durationNs` integer durations, per-source refresh results, per-destination
