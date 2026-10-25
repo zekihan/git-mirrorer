@@ -3,6 +3,15 @@ concurrency: 4
 operationTimeout: 10m
 runTimeout: 0s
 logLevel: info
+cache:
+  sourceBytes: 5368709120
+  totalBytes: 21474836480
+  sourceEntries: 250000
+  totalEntries: 1000000
+  sourceObjects: 2000000
+  totalObjects: 8000000
+  reserveBytes: 1073741824
+  validationTimeout: 10s
 repositories:
   - name: example
     source: git@github.com:owner/example.git

@@ -35,6 +35,15 @@ concurrency: 4
 operationTimeout: 10m
 runTimeout: 0s
 logLevel: info
+cache:
+  sourceBytes: 5368709120
+  totalBytes: 21474836480
+  sourceEntries: 250000
+  totalEntries: 1000000
+  sourceObjects: 2000000
+  totalObjects: 8000000
+  reserveBytes: 1073741824
+  validationTimeout: 10s
 repositories:
   - name: example
     source: git@github.com:owner/example.git
@@ -152,8 +161,9 @@ payloads block that source; upload failures block only the affected destination.
 LFS transfers use standard endpoint discovery and authentication. Custom endpoint
 configuration, custom transfer adapters, and repositories containing `.lfsconfig`
 are unsupported and rejected. Each active source uses one LFS transfer at a time.
-There is no LFS/ref transaction, remote payload deletion, or cache pruning: a failed
-ref push may leave uploaded payloads on the destination. With `lfs: false`, ordinary
+There is no LFS/ref transaction or remote payload deletion: a failed ref push may
+leave uploaded payloads on the destination. Local LFS payloads are rebuilt for each
+refresh to avoid retaining obsolete generations. With `lfs: false`, ordinary
 Git pointer files are mirrored but their external payloads are not transferred.
 
 ## Authentication and cache
@@ -168,8 +178,56 @@ environment variables are removed and managed repository hooks are disabled.
 Caches live at `<stateDir>/repositories/<SHA-256 of source identity>/repo.git` with
 ownership metadata alongside them. Advisory locks live separately in `locks/`.
 Overlapping invocations sharing the same state directory fail contended sources
-rather than waiting. Shared storage must support advisory locks. Separate state
-directories cannot coordinate competing writers to the same destination.
+rather than waiting for a source lease. Shared storage must support advisory locks.
+Separate state directories cannot coordinate competing writers to the same destination.
+
+Cache limits are mandatory, positive values; omitted fields retain the defaults
+shown above. Byte limits count logical regular-file sizes, including Git, LFS,
+metadata, and temporary data. Entry limits include files and directories. Object
+limits count loose Git objects and every packed object, including duplicate copies
+during repacking. Total limits cover all entries under `repositories/`, including
+idle sources and abandoned clones; each total must be at least its source limit.
+`reserveBytes` preserves a sampled free-space margin for unrelated filesystem users.
+
+Before and after storage operations, and periodically during them, the tool checks
+these limits and the free-space reserve. A breach cancels the owned subprocess
+process group and blocks publication of an unvalidated source snapshot. Inspections
+stream batches of at most 128 directory entries, stop at the entry/object/byte
+budget, reject symlinks and special files, limit depth to 128, and use
+`validationTimeout` even with `runTimeout: 0s`. Metadata reads are capped at 64 KiB.
+A state-wide advisory budget lock serializes clone/fetch, reclamation, and LFS
+operations across processes. Lock waiting plus the complete storage operation is
+bounded by `operationTimeout`; interrupted clone cleanup has a separate bounded
+`validationTimeout` allowance. Cleanup also streams entries, stops at its entry
+budget, and may leave an abandoned temporary entry for operator recovery. Partial
+clone cleanup between retry attempts has a fixed 10-second/1,000,000-entry ceiling
+within the retry deadline. Git-only destination pushes can still run concurrently.
+All invocations sharing a state directory must use the same limits and this version
+of the tool. Existing state directories must not allow group/other write access.
+Keep state private to one trusted service account, on a filesystem supporting
+ordinary bounded local directory operations and advisory locks. Hostile local
+writers or filesystems that hang inside a system call are outside this model.
+
+After a successful Git refresh, while holding the source lease, the tool expires
+cache reflogs and runs foreground Git garbage collection with immediate pruning.
+It then removes this source's previous local LFS storage before fetching all
+payloads reachable from the refreshed refs. This costs repeated LFS downloads, but
+prevents disjoint generations accumulating indefinitely. Reclamation finishes
+before any destination is attempted; the snapshot and its complete LFS payloads
+remain intact through every destination, including after a destination fails.
+
+These are application budgets, **not hard filesystem quotas**: a subprocess can
+write beyond a limit between inspections (a 200 ms sampling timer,
+plus the bounded scan time and process shutdown). A fast transfer or repack can
+therefore consume the free-space reserve before cancellation. Use a dedicated
+filesystem/subvolume with byte and inode quotas, preferably per source, to enforce
+a strict allocation ceiling and protect unrelated jobs. Size budgets below those
+quotas with room for transfer/repack temporary data and normal filesystem overhead.
+No quota, mount, or deployment settings are changed by the executable. An entry
+left over budget by a canceled refresh fails closed on subsequent runs; it is not
+automatically deleted. A total-budget/inspection failure blocks new storage work
+until an operator restores capacity; source-only failures allow healthy sources
+to continue when the total cache still fits its budget.
 
 A cache is disposable. Invalid ownership, symlinks, partial/shallow repositories,
 and unexpected origins produce errors instead of automatic deletion. To recover,

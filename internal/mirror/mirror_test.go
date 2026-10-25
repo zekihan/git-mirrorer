@@ -2,10 +2,13 @@ package mirror
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -31,7 +34,7 @@ func realRunner(t *testing.T, cfg config.Config) *Runner {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Runner{Config: cfg, Git: CachedGit{Client: client, StateDir: cfg.StateDir}}
+	return &Runner{Config: cfg, Git: CachedGit{Client: client, StateDir: cfg.StateDir, Limits: cfg.Cache, Timeout: cfg.OperationTimeout}}
 }
 
 func TestPartialFailureAndStaleCache(t *testing.T) {
@@ -330,5 +333,142 @@ func TestCacheLockConflictAndInvalidCache(t *testing.T) {
 	result = runner.Run(t.Context())
 	if result.Sources[0].Error.Stage != "cache" || result.Totals.Attempted != 0 {
 		t.Fatal(result)
+	}
+}
+
+func TestHighCardinalityCacheDoesNotStopHealthySource(t *testing.T) {
+	testutil.Isolate(t)
+	source, dest := testutil.Repository(t, false), testutil.Repository(t, true)
+	testutil.Commit(t, source, "data", "old")
+	cfg := configured(t, source, dest)
+	if result := realRunner(t, cfg).Run(t.Context()); result.Outcome != Succeeded {
+		t.Fatal(result)
+	}
+	path := filepath.Join(cfg.StateDir, "repositories", cache.Key(source), "repo.git", "extra")
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 256 {
+		if err := os.WriteFile(filepath.Join(path, fmt.Sprintf("%04d", i)), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	healthy, backup := testutil.Repository(t, false), testutil.Repository(t, true)
+	testutil.Commit(t, healthy, "healthy", "new")
+	cfg.Cache = cache.DefaultLimits()
+	cfg.Cache.SourceEntries = 128
+	cfg.Repositories = append(cfg.Repositories, config.Repository{Name: "healthy", Source: healthy, Destinations: []config.Destination{{Name: "backup", URL: backup}}})
+	cfg.Concurrency = 2 // RunTimeout is deliberately disabled.
+	start := time.Now()
+	result := realRunner(t, cfg).Run(t.Context())
+	if result.Totals.Skipped != 1 || result.Totals.Succeeded != 1 || result.Sources[0].Error.Stage != "cache" || !strings.Contains(result.Sources[0].Error.Detail, "entry budget") || time.Since(start) > 5*time.Second {
+		t.Fatalf("cardinality isolation: %+v (%v)", result, time.Since(start))
+	}
+	testutil.EqualRefs(t, healthy, backup)
+}
+
+func TestReclaimsDisjointGitAndLFSSnapshotsUnderLease(t *testing.T) {
+	if _, err := exec.LookPath("git-lfs"); err != nil {
+		t.Skip("Git LFS is not installed")
+	}
+	testutil.Isolate(t)
+	source, dest1, dest2 := testutil.Repository(t, false), testutil.Repository(t, true), testutil.Repository(t, true)
+	testutil.Git(t, source, "lfs", "install", "--local")
+	cfg := configured(t, source, dest1, dest2)
+	cfg.Repositories[0].LFS = true
+	cfg.Cache = cache.DefaultLimits()
+	cfg.Cache.SourceBytes = 1 << 20
+	cfg.Cache.SourceObjects = 100
+	runner := realRunner(t, cfg)
+	repoPath := filepath.Join(cfg.StateDir, "repositories", cache.Key(source), "repo.git")
+	var previous, previousPayload string
+	for generation := range 4 {
+		if generation > 0 {
+			testutil.Git(t, source, "checkout", "--orphan", "next")
+			testutil.Git(t, source, "rm", "-rf", ".")
+			testutil.Git(t, source, "branch", "-D", "main")
+			testutil.Git(t, source, "branch", "-m", "main")
+		}
+		testutil.Commit(t, source, ".gitattributes", "*.bin filter=lfs diff=lfs merge=lfs -text\n")
+		payload := fmt.Sprintf("payload generation %d", generation)
+		current := testutil.Commit(t, source, "asset.bin", payload)
+		oid := fmt.Sprintf("%x", sha256.Sum256([]byte(payload)))
+		payloadPath := filepath.Join(repoPath, "lfs", "objects", oid[:2], oid[2:4], oid)
+		backend := &observedBackend{Backend: realRunner(t, cfg).Git, afterFirstPush: func() {
+			if lease, err := cache.Acquire(cfg.StateDir, source); err == nil {
+				lease.Close()
+				t.Error("source lease released before second destination")
+			}
+			if got, err := os.ReadFile(payloadPath); err != nil || string(got) != payload {
+				t.Errorf("payload removed during fan-out: %q %v", got, err)
+			}
+		}}
+		runner.Git = backend
+		result := runner.Run(t.Context())
+		if result.Outcome != Succeeded || result.Totals.Succeeded != 2 {
+			t.Fatalf("generation %d: %+v", generation, result)
+		}
+		testutil.EqualRefs(t, source, dest1)
+		testutil.EqualRefs(t, source, dest2)
+		for _, dest := range []string{dest1, dest2} {
+			if got, err := os.ReadFile(filepath.Join(dest, "lfs", "objects", oid[:2], oid[2:4], oid)); err != nil || string(got) != payload {
+				t.Fatalf("destination payload: %q %v", got, err)
+			}
+		}
+		if previous != "" {
+			cmd := exec.CommandContext(t.Context(), "git", "cat-file", "-e", previous)
+			cmd.Dir = repoPath
+			if err := cmd.Run(); err == nil {
+				t.Fatal("unreachable Git history retained")
+			}
+			oldOID := fmt.Sprintf("%x", sha256.Sum256([]byte(previousPayload)))
+			if _, err := os.Lstat(filepath.Join(repoPath, "lfs", "objects", oldOID[:2], oldOID[2:4], oldOID)); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("unreachable LFS payload retained: %v", err)
+			}
+		}
+		previous, previousPayload = current, payload
+	}
+}
+
+func TestCacheBudgetFailureSkipsEveryDestination(t *testing.T) {
+	testutil.Isolate(t)
+	source, dest := testutil.Repository(t, false), testutil.Repository(t, true)
+	testutil.Commit(t, source, "data", "one")
+	cfg := configured(t, source, dest)
+	cfg.Cache = cache.DefaultLimits()
+	cfg.Cache.SourceBytes = 1
+	result := realRunner(t, cfg).Run(t.Context())
+	if result.Totals.Attempted != 0 || result.Totals.Skipped != 1 || result.Sources[0].Error == nil || !strings.Contains(result.Sources[0].Error.Detail, "budget") {
+		t.Fatalf("oversize snapshot published: %+v", result)
+	}
+	if testutil.Refs(t, dest) != "" {
+		t.Fatal("destination changed on cache failure")
+	}
+}
+
+func TestLFSBudgetFailureBlocksGitPublication(t *testing.T) {
+	if _, err := exec.LookPath("git-lfs"); err != nil {
+		t.Skip("Git LFS is not installed")
+	}
+	testutil.Isolate(t)
+	source, dest := testutil.Repository(t, false), testutil.Repository(t, true)
+	testutil.Git(t, source, "lfs", "install", "--local")
+	testutil.Commit(t, source, ".gitattributes", "*.bin filter=lfs diff=lfs merge=lfs -text\n")
+	testutil.Commit(t, source, "large.bin", strings.Repeat("payload", 20_000))
+	cfg := configured(t, source, dest)
+	cfg.Repositories[0].LFS = true
+	cfg.Cache = cache.DefaultLimits()
+	cfg.Cache.SourceBytes = 64 << 10
+	result := realRunner(t, cfg).Run(t.Context())
+	if result.Totals.Attempted != 0 || result.Totals.Skipped != 1 || result.Sources[0].Error == nil || result.Sources[0].Error.Stage != "lfs-fetch" || !strings.Contains(result.Sources[0].Error.Detail, "byte budget") {
+		t.Fatalf("oversize LFS snapshot published: %+v", result)
+	}
+	if testutil.Refs(t, dest) != "" {
+		t.Fatal("Git refs published despite oversized LFS payload")
+	}
+	// The failed refresh is not reused or pushed on a subsequent invocation.
+	result = realRunner(t, cfg).Run(t.Context())
+	if result.Totals.Attempted != 0 || result.Totals.Skipped != 1 {
+		t.Fatalf("oversize cache reused: %+v", result)
 	}
 }

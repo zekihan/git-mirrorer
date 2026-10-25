@@ -79,6 +79,8 @@ type Backend interface {
 type CachedGit struct {
 	Client   *git.Client
 	StateDir string
+	Limits   cache.Limits
+	Timeout  time.Duration
 }
 
 func (b CachedGit) Prepare(ctx context.Context, source string) (string, func() error, string, error) {
@@ -86,30 +88,61 @@ func (b CachedGit) Prepare(ctx context.Context, source string) (string, func() e
 	if err != nil {
 		return "", nil, "lock", err
 	}
-	cloned, err := lease.Prepare(ctx, b.Client)
+	limits, timeout := b.policy()
+	lease.SetLimits(limits)
+	stage := "cache"
+	err = lease.Mutate(ctx, limits, timeout, func(ctx context.Context) error {
+		cloned, err := lease.Prepare(ctx, b.Client)
+		if err != nil {
+			var refresh *cache.RefreshError
+			if errors.As(err, &refresh) {
+				stage = "fetch"
+			}
+			return err
+		}
+		if !cloned {
+			stage = "fetch"
+			if err := b.Client.Fetch(ctx, lease.Path, source); err != nil {
+				return err
+			}
+		}
+		stage = "cache"
+		if err := lease.Reclaim(ctx, b.Client); err != nil {
+			return err
+		}
+		return lease.ClearLFS(ctx, limits)
+	})
 	if err != nil {
-		var refresh *cache.RefreshError
-		if errors.As(err, &refresh) {
-			return "", lease.Close, "fetch", err
-		}
-		return "", lease.Close, "cache", err
-	}
-	if !cloned {
-		if err := b.Client.Fetch(ctx, lease.Path, source); err != nil {
-			return "", lease.Close, "fetch", err
-		}
+		return "", lease.Close, stage, err
 	}
 	return lease.Path, lease.Close, "", nil
+}
+
+func (b CachedGit) policy() (cache.Limits, time.Duration) {
+	limits, timeout := b.Limits, b.Timeout
+	if limits == (cache.Limits{}) {
+		limits = cache.DefaultLimits()
+	}
+	if timeout <= 0 {
+		timeout = 10 * time.Minute
+	}
+	return limits, timeout
 }
 
 func (b CachedGit) Push(ctx context.Context, path, destination string, atomic bool) (git.Changes, error) {
 	return b.Client.Push(ctx, path, destination, atomic)
 }
 func (b CachedGit) LFSFetch(ctx context.Context, path, source string) error {
-	return b.Client.LFSFetch(ctx, path, source)
+	// Prepare's source lease is still held. Use it for budget accounting without
+	// taking the same source lock again.
+	lease := cache.ForPath(path)
+	limits, timeout := b.policy()
+	return lease.Mutate(ctx, limits, timeout, func(ctx context.Context) error { return b.Client.LFSFetch(ctx, path, source) })
 }
 func (b CachedGit) LFSPush(ctx context.Context, path, destination string) error {
-	return b.Client.LFSPush(ctx, path, destination)
+	lease := cache.ForPath(path)
+	limits, timeout := b.policy()
+	return lease.Mutate(ctx, limits, timeout, func(ctx context.Context) error { return b.Client.LFSPush(ctx, path, destination) })
 }
 
 type Runner struct {

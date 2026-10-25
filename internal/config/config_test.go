@@ -130,3 +130,19 @@ func canonicalTemp(t *testing.T) string {
 	}
 	return path
 }
+
+func TestCachePolicyDefaultsOverridesAndValidation(t *testing.T) {
+	cfg, err := Decode(strings.NewReader(validYAML), canonicalTemp(t))
+	if err != nil || cfg.Cache.SourceBytes != 5<<30 || cfg.Cache.TotalBytes != 20<<30 || cfg.Cache.SourceEntries != 250_000 || cfg.Cache.ValidationTimeout.String() != "10s" {
+		t.Fatalf("cache defaults: %+v %v", cfg.Cache, err)
+	}
+	cfg, err = Decode(strings.NewReader("cache:\n  sourceBytes: 1024\n  validationTimeout: 50ms\n"+validYAML), canonicalTemp(t))
+	if err != nil || cfg.Cache.SourceBytes != 1024 || cfg.Cache.TotalBytes != 20<<30 || cfg.Cache.ValidationTimeout.String() != "50ms" {
+		t.Fatalf("cache overrides: %+v %v", cfg.Cache, err)
+	}
+	for _, setting := range []string{"sourceBytes: 0", "sourceEntries: -1", "totalBytes: 1", "totalEntries: 1", "totalObjects: 1", "sourceObjects: 0", "reserveBytes: 0", "validationTimeout: 0s", "unknown: 1"} {
+		if _, err := Decode(strings.NewReader("cache:\n  "+setting+"\n"+validYAML), canonicalTemp(t)); err == nil {
+			t.Errorf("accepted %s", setting)
+		}
+	}
+}
