@@ -9,6 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/zekihan/git-mirrorer/internal/cachefs"
 )
 
 type Client struct{ runner *Runner }
@@ -37,7 +40,9 @@ func (c *Client) Clone(ctx context.Context, source, path string) error {
 	first := true
 	return c.retry(ctx, func(ctx context.Context) error {
 		if !first {
-			if err := os.RemoveAll(path); err != nil {
+			cleanupCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			if err := cachefs.RemoveTree(cleanupCtx, path, 1_000_000); err != nil {
 				return err
 			}
 		}
@@ -243,4 +248,13 @@ func (c *Client) checkLFSConfig(ctx context.Context, path string) error {
 		return fmt.Errorf("check LFS repository configuration: %w", err)
 	}
 	return nil
+}
+
+// Reclaim runs only while the caller holds the source lease, before fan-out.
+// No external Git process may write the managed cache.
+func (c *Client) Reclaim(ctx context.Context, path string) error {
+	if err := c.command(ctx, path, nil, nil, "reflog", "expire", "--expire=now", "--all"); err != nil {
+		return err
+	}
+	return c.command(ctx, path, nil, nil, "-c", "pack.threads=1", "-c", "pack.windowMemory=64m", "-c", "gc.cruftPacks=false", "-c", "gc.autoDetach=false", "-c", "gc.detach=false", "gc", "--prune=now")
 }
