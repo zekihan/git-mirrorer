@@ -34,3 +34,20 @@ in place. The description job continues using the existing `DOCKERHUB_USERNAME` 
 Local validation: 14 policy tests, policy inspection of all four workflows,
 actionlint 1.7.7, `make test build lint release-check`, and isolated
 `MIRROR_SMOKE_IMAGE=git-mirrorer:ops43-20261027 make container-test` passed.
+
+## Docker Hub description input wiring
+
+The pinned description Action requires nonempty `username` and `password` inputs.
+Its [input helper](https://github.com/peter-evans/dockerhub-description/blob/1b9a80c056b620d92cedb9d9b5a223409c68ddfa/src/input-helper.ts)
+also accepts environment fallbacks. Before credential scoping, workflow-level
+`DOCKERHUB_USERNAME` and `DOCKERHUB_PASSWORD` aliases pointed at the existing
+`DOCKER_USERNAME` and `DOCKER_PASSWORD` secrets. Removing that environment exposed
+stale `DOCKERHUB_*` secret references in the Action inputs.
+
+Pass the existing `DOCKER_USERNAME` and `DOCKER_PASSWORD` secrets directly to the
+pinned Action's inputs and derive the repository namespace from the same username.
+Do not restore workflow-wide credential exposure or provision alias secrets.
+Offline contract tests resolve inputs using synthetic values for only the existing
+secret names; they reject the old aliases and missing/empty required inputs, and
+verify credentials remain confined to the description step. These tests perform
+no authentication or publication and never read real secret values.
