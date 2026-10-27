@@ -13,13 +13,20 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check workflow security policy
+        run: |
+          python3 -m pip install -r .github/scripts/requirements-policy.txt
+          python3 -m unittest discover -s .github/scripts -p 'test_workflow_policy.py'
+          python3 .github/scripts/check_workflows.py
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: Verify Git LFS
         run: git lfs version
-      - uses: golangci/golangci-lint-action@v9.3.0
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.15.0
           args: --timeout=5m
@@ -29,7 +36,7 @@ jobs:
           go mod tidy
           git diff --exit-code -- go.mod go.sum
       - run: make test build
-      - uses: goreleaser/goreleaser-action@v7.3.0
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           install-only: true
           version: v2.19.0
@@ -37,5 +44,7 @@ jobs:
   container:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: make container-test
