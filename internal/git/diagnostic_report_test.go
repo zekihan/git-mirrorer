@@ -54,3 +54,35 @@ func TestLongSingleLineCommandDiagnosticIsOmitted(t *testing.T) {
 		t.Fatal("long credential record was retained")
 	}
 }
+
+func TestQuotedCommandCredentialsInReports(t *testing.T) {
+	runner := &git.Runner{Executable: "/bin/sh", Timeout: 5 * time.Second, Env: os.Environ()}
+	for _, input := range []string{
+		`remote: {"token":"SUPERSECRET SECONDSECRET", "error":"denied"}`,
+		`remote: {"token":"SUPERSECRET SECONDSECRET","error":"denied"}`,
+		`remote: password="SUPERSECRET SECONDSECRET" denied`,
+		`remote: Authorization: "Bearer SUPERSECRET SECONDSECRET" denied`,
+	} {
+		err := runner.Run(t.Context(), "", strings.NewReader(input), nil, "-c", "cat >&2; exit 1")
+		var commandErr *git.CommandError
+		if !errors.As(err, &commandErr) {
+			t.Fatalf("expected command failure: %v", err)
+		}
+		if strings.Contains(err.Error(), "SUPERSECRET") || strings.Contains(err.Error(), "SECONDSECRET") {
+			t.Fatalf("command error leaked credentials: %v", err)
+		}
+		value := mirror.Report{Error: &mirror.Failure{Detail: commandErr.Detail}}
+		for _, format := range []string{"text", "json"} {
+			var output bytes.Buffer
+			if err := report.Write(&output, format, value); err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(output.String(), "SUPERSECRET") || strings.Contains(output.String(), "SECONDSECRET") {
+				t.Fatalf("credentials leaked in %s: %s", format, output.String())
+			}
+			if !strings.Contains(output.String(), "denied") {
+				t.Fatalf("unrelated diagnostic lost in %s", format)
+			}
+		}
+	}
+}
