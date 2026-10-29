@@ -221,7 +221,9 @@ func Address(base, value string) (string, bool, error) {
 	}
 	// A colon before any slash denotes SCP-style SSH, except for explicit paths.
 	colon, slash := strings.IndexByte(value, ':'), strings.IndexByte(value, '/')
-	if bracket := strings.IndexByte(value, '['); colon >= 0 && bracket >= 0 && (slash < 0 || bracket < slash) {
+	// Only brackets before the first colon can delimit an IPv6 host. Brackets
+	// after that separator belong to the repository path.
+	if bracket := strings.IndexByte(value, '['); colon >= 0 && bracket >= 0 && bracket < colon && (slash < 0 || bracket < slash) {
 		end := strings.IndexByte(value, ']')
 		if end < bracket || end+1 >= len(value) || value[end+1] != ':' {
 			return "", false, errors.New("invalid bracketed SCP-style SSH address")
