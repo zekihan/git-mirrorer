@@ -99,6 +99,33 @@ func TestAddresses(t *testing.T) {
 	}
 }
 
+func TestSCPRepositoryPathBrackets(t *testing.T) {
+	for _, address := range []string{
+		"git@EXAMPLE.com:repo[1].git",
+		"EXAMPLE.com:repo[1]/child.git",
+		"git@[::1]:repo[1].git",
+	} {
+		t.Run(address, func(t *testing.T) {
+			want := strings.ReplaceAll(address, "EXAMPLE.com", "example.com")
+			got, local, err := Address(canonicalTemp(t), address)
+			if err != nil || local || got != want {
+				t.Fatalf("Address(%q) = %q, %v, %v; want %q, false, nil", address, got, local, err, want)
+			}
+			for _, endpoint := range []string{"./source.git", "./backup.git"} {
+				input := strings.ReplaceAll(validYAML, endpoint, address)
+				if _, err := Decode(strings.NewReader(input), canonicalTemp(t)); err != nil {
+					t.Fatalf("configuration with %s = %q: %v", endpoint, address, err)
+				}
+			}
+		})
+	}
+	for _, address := range []string{"git@[::1:repo.git", "git@[::1]repo.git", "git@[::1]:"} {
+		if _, _, err := Address(canonicalTemp(t), address); err == nil {
+			t.Errorf("accepted malformed bracketed host %q", address)
+		}
+	}
+}
+
 func TestSymlinkAncestorsAndConfigDirectory(t *testing.T) {
 	base := canonicalTemp(t)
 	actual := filepath.Join(base, "actual")
