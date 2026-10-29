@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/zekihan/git-mirrorer/internal/testutil"
 )
 
 const validYAML = `repositories:
@@ -240,5 +242,38 @@ func TestCachePolicyDefaultsOverridesAndValidation(t *testing.T) {
 		if _, err := Decode(strings.NewReader("cache:\n  "+setting+"\n"+validYAML), canonicalTemp(t)); err == nil {
 			t.Errorf("accepted %s", setting)
 		}
+	}
+}
+
+func TestLocalGitDirectoryAliases(t *testing.T) {
+	testutil.Isolate(t)
+	worktree := testutil.Repository(t, false)
+	testutil.Commit(t, worktree, "fixture", "source snapshot")
+	gitdir := filepath.Join(worktree, ".git")
+	// Both accepted Git addresses advertise exactly the same nonempty refs.
+	refs := testutil.Git(t, worktree, "ls-remote", worktree)
+	if got := testutil.Git(t, worktree, "ls-remote", gitdir); got != refs || refs == "" {
+		t.Fatalf("fixture aliases differ: %q versus %q", refs, got)
+	}
+	base := canonicalTemp(t)
+	cases := map[string]string{
+		"self":                  strings.NewReplacer("./source.git", worktree, "./backup.git", gitdir).Replace(validYAML),
+		"reverse self":          strings.NewReplacer("./source.git", gitdir, "./backup.git", worktree).Replace(validYAML),
+		"duplicate source":      strings.ReplaceAll(validYAML, "./source.git", worktree) + "  - name: other\n    source: " + gitdir + "\n    destinations:\n      - name: other\n        url: ./other.git\n",
+		"duplicate destination": strings.ReplaceAll(validYAML, "./backup.git", worktree) + "  - name: other\n    source: ./other.git\n    destinations:\n      - name: other\n        url: " + gitdir + "\n",
+		"chain":                 strings.ReplaceAll(validYAML, "./backup.git", worktree) + "  - name: other\n    source: " + gitdir + "\n    destinations:\n      - name: other\n        url: ./other.git\n",
+	}
+	for name, input := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Decode(strings.NewReader(input), base); err == nil {
+				t.Fatal("accepted conflicting local Git directory aliases")
+			}
+		})
+	}
+	// Keep the configured transport path; identity checks must not rewrite it.
+	input := strings.ReplaceAll(validYAML, "./source.git", worktree)
+	cfg, err := Decode(strings.NewReader(input), base)
+	if err != nil || cfg.Repositories[0].Source != worktree {
+		t.Fatalf("independent mapping changed: %+v, %v", cfg, err)
 	}
 }
