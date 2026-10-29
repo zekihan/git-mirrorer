@@ -114,10 +114,14 @@ func (c *Config) validate(base string) error {
 		if err != nil {
 			return fmt.Errorf("%s.source: %w", field, err)
 		}
-		if sources[repo.Source] {
+		sourceIdentity, err := repositoryIdentity(repo.Source)
+		if err != nil {
+			return fmt.Errorf("%s.source: %w", field, err)
+		}
+		if sources[sourceIdentity] {
 			return fmt.Errorf("%s.source duplicates another source; combine its destinations", field)
 		}
-		sources[repo.Source] = true
+		sources[sourceIdentity] = true
 		if len(repo.Destinations) == 0 {
 			return fmt.Errorf("%s.destinations must not be empty", field)
 		}
@@ -135,10 +139,14 @@ func (c *Config) validate(base string) error {
 			if dest.TrustedLocalHooks && !filepath.IsAbs(dest.URL) {
 				return fmt.Errorf("%s.destinations[%d].trustedLocalHooks requires a local destination", field, j)
 			}
-			if destinations[dest.URL] {
+			destinationIdentity, err := repositoryIdentity(dest.URL)
+			if err != nil {
+				return fmt.Errorf("%s.destinations[%d].url: %w", field, j, err)
+			}
+			if destinations[destinationIdentity] {
 				return fmt.Errorf("%s.destinations[%d].url is already owned by a destination", field, j)
 			}
-			destinations[dest.URL] = true
+			destinations[destinationIdentity] = true
 		}
 	}
 	for source := range sources {
@@ -147,6 +155,28 @@ func (c *Config) validate(base string) error {
 		}
 	}
 	return nil
+}
+
+// Git accepts both a worktree directory and its .git directory as local
+// transport endpoints. Compare their shared identity without changing the path
+// used for operations. This only inspects directories; offline validation does
+// not invoke Git or load repository configuration.
+func repositoryIdentity(address string) (string, error) {
+	if !filepath.IsAbs(address) {
+		return address, nil
+	}
+	gitdir := filepath.Join(address, ".git")
+	info, err := os.Stat(gitdir)
+	if errors.Is(err, os.ErrNotExist) {
+		return address, nil
+	}
+	if err != nil {
+		return "", errors.New("cannot inspect local repository identity")
+	}
+	if !info.IsDir() {
+		return address, nil
+	}
+	return resolvePath("", gitdir)
 }
 
 func (c Config) CheckLocalPath(address string) error {

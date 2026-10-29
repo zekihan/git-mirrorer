@@ -68,9 +68,10 @@ or credential helpers for credentials.
 
 Unknown/duplicate YAML keys and multiple documents are errors. Duplicate sources,
 duplicate destination ownership, destinations that are also sources, and repository
-paths overlapping the cache are rejected. Combine a source's destinations in one
-entry. Different SSH aliases or transport URLs may still refer to the same remote;
-configure only one owner for each actual repository.
+paths overlapping the cache are rejected. A local worktree path and its `.git`
+directory share one repository identity for these checks. Combine a source's
+destinations in one entry. Different SSH aliases or transport URLs may still refer
+to the same remote; configure only one owner for each actual repository.
 
 There is no environment-variable configuration overlay, `.env` loading, legacy
 configuration support, HTTP endpoint, or internal scheduler.
