@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/zekihan/git-mirrorer/internal/testutil"
 )
 
 func connectionError(detail string) error {
@@ -88,7 +90,7 @@ func TestRetryPermanentFailure(t *testing.T) {
 }
 
 func TestPushRetryResetsCounts(t *testing.T) {
-	dir := t.TempDir()
+	dir := testutil.TempDir(t)
 	script := filepath.Join(dir, "git")
 	state := filepath.Join(dir, "attempt")
 	body := `#!/bin/sh
@@ -114,7 +116,7 @@ printf '=\trefs/heads/main:refs/heads/main\t[up to date]\n'
 }
 
 func TestCloneRetryCleansPartialDestination(t *testing.T) {
-	dir := t.TempDir()
+	dir := testutil.TempDir(t)
 	script := filepath.Join(dir, "git")
 	destination := filepath.Join(dir, "clone")
 	state := filepath.Join(dir, "attempt")

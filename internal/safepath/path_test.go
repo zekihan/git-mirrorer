@@ -5,10 +5,12 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+
+	"github.com/zekihan/git-mirrorer/internal/testutil"
 )
 
 func TestNamespacePolicy(t *testing.T) {
-	parent := t.TempDir()
+	parent := testutil.TempDir(t)
 	path := filepath.Join(parent, "repo")
 	root, err := Open(path, true)
 	if err != nil {
@@ -70,7 +72,7 @@ type ownerInfo struct {
 func (i ownerInfo) Sys() any { return &i.stat }
 
 func TestOwnershipPolicy(t *testing.T) {
-	info, err := os.Stat(t.TempDir())
+	info, err := os.Stat(testutil.TempDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}

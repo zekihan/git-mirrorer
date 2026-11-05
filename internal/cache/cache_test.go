@@ -30,7 +30,7 @@ func TestLockHelper(t *testing.T) {
 }
 
 func TestCrossProcessLockAndCrashRecovery(t *testing.T) {
-	state := t.TempDir()
+	state := testutil.TempDir(t)
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +85,7 @@ func TestClonePublicationAndInvalidEntries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state := t.TempDir()
+	state := testutil.TempDir(t)
 	lease, err := Acquire(state, source)
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +131,7 @@ func TestClonePublicationAndInvalidEntries(t *testing.T) {
 func TestRejectSymlinkLocksAndDirectories(t *testing.T) {
 	for _, kind := range []string{"lock", "directory"} {
 		t.Run(kind, func(t *testing.T) {
-			state := t.TempDir()
+			state := testutil.TempDir(t)
 			if err := os.Mkdir(filepath.Join(state, "locks"), 0o700); err != nil {
 				t.Fatal(err)
 			}
@@ -139,7 +139,7 @@ func TestRejectSymlinkLocksAndDirectories(t *testing.T) {
 			if kind == "directory" {
 				target = filepath.Join(state, "repositories")
 			}
-			if err := os.Symlink(t.TempDir(), target); err != nil {
+			if err := os.Symlink(testutil.TempDir(t), target); err != nil {
 				t.Fatal(err)
 			}
 			if lease, err := Acquire(state, "source"); err == nil {
@@ -158,7 +158,7 @@ func TestRejectUntrustedCacheAndExecutableConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state := t.TempDir()
+	state := testutil.TempDir(t)
 	lease, err := Acquire(state, source)
 	if err != nil {
 		t.Fatal(err)
@@ -167,7 +167,7 @@ func TestRejectUntrustedCacheAndExecutableConfig(t *testing.T) {
 	if _, err := lease.Prepare(t.Context(), client); err != nil {
 		t.Fatal(err)
 	}
-	sentinel := filepath.Join(t.TempDir(), "helper-executed")
+	sentinel := filepath.Join(testutil.TempDir(t), "helper-executed")
 	testutil.Git(t, lease.Path, "config", "credential.helper", "!touch '"+sentinel+"'")
 	for _, target := range []string{state, filepath.Dir(state), filepath.Join(state, "locks"), filepath.Join(state, "repositories"), lease.entry, lease.Path, filepath.Join(lease.Path, "config")} {
 		info, err := os.Stat(target)

@@ -29,7 +29,7 @@ func TestLFSTransferAllSnapshotRefs(t *testing.T) {
 	if err := c.CheckLFS(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	cache := filepath.Join(t.TempDir(), "mirror.git")
+	cache := filepath.Join(testutil.TempDir(t), "mirror.git")
 	if err := c.Clone(t.Context(), source, cache); err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestLFSTransferAllSnapshotRefs(t *testing.T) {
 	if err := os.Remove(filepath.Join(source, ".git", "lfs", "objects", oid[:2], oid[2:4], oid)); err != nil {
 		t.Fatal(err)
 	}
-	second := filepath.Join(t.TempDir(), "mirror.git")
+	second := filepath.Join(testutil.TempDir(t), "mirror.git")
 	if err := c.Clone(t.Context(), source, second); err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestLFSEmptySource(t *testing.T) {
 	testutil.Isolate(t)
 	source, dest := testutil.Repository(t, true), testutil.Repository(t, true)
 	c := newClient(t)
-	cache := filepath.Join(t.TempDir(), "mirror.git")
+	cache := filepath.Join(testutil.TempDir(t), "mirror.git")
 	if err := c.Clone(t.Context(), source, cache); err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestLFSRejectsEndpointOverrides(t *testing.T) {
 	source := testutil.Repository(t, false)
 	testutil.Commit(t, source, "a", "one")
 	c := newClient(t)
-	cache := filepath.Join(t.TempDir(), "mirror.git")
+	cache := filepath.Join(testutil.TempDir(t), "mirror.git")
 	if err := c.Clone(t.Context(), source, cache); err != nil {
 		t.Fatal(err)
 	}

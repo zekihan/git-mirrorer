@@ -30,7 +30,7 @@ func TestExactMirror(t *testing.T) {
 	testutil.Git(t, source, "update-ref", "refs/custom/snapshot", first)
 	testutil.Git(t, source, "notes", "add", "-m", "note")
 	c := newClient(t)
-	cache := filepath.Join(t.TempDir(), "mirror.git")
+	cache := filepath.Join(testutil.TempDir(t), "mirror.git")
 	if err := c.Clone(t.Context(), source, cache); err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestAtomicAndPartialPush(t *testing.T) {
 	source, dest := testutil.Repository(t, false), testutil.Repository(t, true)
 	testutil.Commit(t, source, "a", "one")
 	c := newClient(t)
-	cache := filepath.Join(t.TempDir(), "mirror.git")
+	cache := filepath.Join(testutil.TempDir(t), "mirror.git")
 	if err := c.Clone(t.Context(), source, cache); err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestEmptySourceAndDefaultBranchPolicy(t *testing.T) {
 	source, dest := testutil.Repository(t, false), testutil.Repository(t, true)
 	testutil.Commit(t, source, "a", "one")
 	c := newClient(t)
-	cache := filepath.Join(t.TempDir(), "mirror.git")
+	cache := filepath.Join(testutil.TempDir(t), "mirror.git")
 	if err := c.Clone(t.Context(), source, cache); err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestEmptySourceAndDefaultBranchPolicy(t *testing.T) {
 	if refs := testutil.Refs(t, dest); refs != "" {
 		t.Fatalf("refs remain: %s", refs)
 	}
-	emptyCache := filepath.Join(t.TempDir(), "empty.git")
+	emptyCache := filepath.Join(testutil.TempDir(t), "empty.git")
 	if err := c.Clone(t.Context(), source, emptyCache); err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestLocalReceiveHooksRequireExplicitTrust(t *testing.T) {
 	source := testutil.Repository(t, false)
 	testutil.Commit(t, source, "a", "one")
 	client := newClient(t)
-	cache := filepath.Join(t.TempDir(), "mirror.git")
+	cache := filepath.Join(testutil.TempDir(t), "mirror.git")
 	if err := client.Clone(t.Context(), source, cache); err != nil {
 		t.Fatal(err)
 	}

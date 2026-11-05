@@ -121,7 +121,7 @@ func TestParentExitWithInheritedPipes(t *testing.T) {
 
 func TestCommandEnvironmentAndSSHConfiguration(t *testing.T) {
 	testutil.Isolate(t)
-	global := filepath.Join(t.TempDir(), "gitconfig")
+	global := filepath.Join(testutil.TempDir(t), "gitconfig")
 	if err := os.WriteFile(global, []byte("[core]\nsshCommand = ssh -p 2222\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
