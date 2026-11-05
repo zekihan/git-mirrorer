@@ -313,3 +313,5 @@ workflows on version tags, with container publication also available manually.
 
 See [the rewrite plan](docs/rewrite-plan.md) for the design contract and verification
 scope. Licensed under [AGPL-3.0](LICENSE).
+
+Publishing and manual recovery: [Publishing](docs/publishing.md).

@@ -72,6 +72,9 @@ class RepositoryGuards(unittest.TestCase):
                 self.assertEqual(pins[repo + '@' + version], sha)
             for line in path.read_text().splitlines():
                 if 'uses:' in line and '@' in line:
+                    if 'zekihan/release-workflows/' in line:
+                        self.assertRegex(line, r'@[a-f0-9]{40} # main$')
+                        continue
                     self.assertRegex(line, r'@[a-f0-9]{40} # v[^\s]+$')
 
     def test_pr_has_no_private_credentials(self):
@@ -81,8 +84,8 @@ class RepositoryGuards(unittest.TestCase):
 
     def test_release_waits_for_checks(self):
         doc = yaml.safe_load((self.root / '.github/workflows/release.yaml').read_text())
-        self.assertEqual('checks', doc['jobs']['release']['needs'])
-        self.assertEqual({'contents': 'write'}, doc['jobs']['release']['permissions'])
+        self.assertEqual(['decide', 'checks', 'publish'], doc['jobs']['release']['needs'])
+        self.assertEqual({'contents': 'write', 'packages': 'write'}, doc['jobs']['release']['permissions'])
 
     def test_description_credentials_only_reach_description_step(self):
         doc = yaml.safe_load((self.root / '.github/workflows/docker_hub_readme.yaml').read_text())
@@ -93,9 +96,9 @@ class RepositoryGuards(unittest.TestCase):
         self.assertTrue(steps[1]['uses'].startswith('peter-evans/dockerhub-description@'))
 
     def test_registry_write_is_only_in_publish_job(self):
-        doc = yaml.safe_load((self.root / '.github/workflows/docker_release.yaml').read_text())
+        doc = yaml.safe_load((self.root / '.github/workflows/release.yaml').read_text())
         self.assertEqual({'contents': 'read'}, doc['permissions'])
-        self.assertNotIn('permissions', doc['jobs']['checks'])
+        self.assertEqual({'contents': 'read'}, doc['jobs']['checks']['permissions'])
         self.assertEqual({'contents': 'read', 'packages': 'write'}, doc['jobs']['publish']['permissions'])
 
 

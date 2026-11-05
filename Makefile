@@ -43,7 +43,7 @@ build/release/all:
 	goreleaser build --clean --snapshot --id all
 
 release:
-	goreleaser release --clean
+	goreleaser release --clean --skip=publish,announce
 
 container-test:
 	./scripts/container_smoke.sh
