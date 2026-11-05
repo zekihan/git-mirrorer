@@ -1,31 +1,75 @@
-name: Release
-on:
+name: Publish
+'on':
   push:
-    tags: ['v*']
+    tags:
+      - v*
+  schedule:
+    - cron: 31 3 * * *
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild unchanged edge inputs
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
-  group: release-${{ github.ref }}
+  group: publish-${{ github.repository }}
   cancel-in-progress: false
 jobs:
+  decide:
+    uses: zekihan/release-workflows/.github/workflows/decide.yaml@5fa11e0c1104623d17a191557a27e86a7715f778 # main
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+    with:
+      mode: ${{ startsWith(github.ref, 'refs/tags/') && 'release' || 'edge' }}
+      image: git-mirrorer
+      force: ${{ inputs.force || false }}
+    secrets:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
   checks:
+    needs: decide
+    if: ${{ needs.decide.outputs.build == 'true' }}
     uses: ./.github/workflows/pr.yaml
+    permissions:
+      contents: read
+    with:
+      publishing: true
+  publish:
+    needs:
+      - decide
+      - checks
+    uses: zekihan/release-workflows/.github/workflows/image.yaml@5fa11e0c1104623d17a191557a27e86a7715f778 # main
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: git-mirrorer
+      mode: ${{ startsWith(github.ref, 'refs/tags/') && 'release' || 'edge' }}
+      version: ${{ needs.decide.outputs.version }}
+      fingerprint: ${{ needs.decide.outputs.fingerprint }}
+      qemu: true
+    secrets:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
   release:
+    needs:
+      - decide
+      - checks
+      - publish
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    uses: zekihan/release-workflows/.github/workflows/release.yaml@5fa11e0c1104623d17a191557a27e86a7715f778 # main
     permissions:
       contents: write
-    needs: checks
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
-        with:
-          version: v2.20.0
-          args: release --clean
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      packages: write
+    with:
+      version: ${{ needs.decide.outputs.version }}
+      binaries: true
+      image: git-mirrorer
+      image-digest: ${{ needs.publish.outputs.digest }}
+    secrets:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
