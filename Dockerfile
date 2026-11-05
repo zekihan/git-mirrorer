@@ -9,7 +9,7 @@ COPY cmd ./cmd
 COPY internal ./internal
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o /git-mirrorer ./cmd/git-mirrorer
 
-FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+FROM alpine:3.24.4@sha256:e2944c2947c8cabdd6b23a2ebcf8094a9f3d53ca9e0340edd065237ab74c18c0
 RUN apk add --no-cache ca-certificates git git-lfs openssh-client \
     && adduser -D -u 25090 git-mirrorer \
     && mkdir -p /data/.git-mirrorer \
