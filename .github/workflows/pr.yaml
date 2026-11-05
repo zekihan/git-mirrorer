@@ -47,6 +47,22 @@ jobs:
           install-only: true
           version: v2.20.0
       - run: make release-check
+  macos-test:
+    runs-on: macos-latest
+    env:
+      GOMAXPROCS: 2
+      GOFLAGS: -p=2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: command -v git-lfs || brew install git-lfs
+      - run: go test -race -count=1 ./...
+      - run: env -u TMPDIR go test -race -count=1 ./...
   container:
     runs-on: ubuntu-latest
     steps:

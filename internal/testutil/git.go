@@ -3,10 +3,46 @@ package testutil
 import (
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
+
+func TempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path := dir; ; path = filepath.Dir(path) {
+		info, statErr := os.Stat(path)
+		if statErr != nil {
+			t.Fatal(statErr)
+		}
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok || (stat.Uid != uint32(os.Geteuid()) && stat.Uid != 0) || info.Mode().Perm()&0o022 != 0 {
+			account, userErr := user.Current()
+			if userErr != nil {
+				t.Fatal(userErr)
+			}
+			home, homeErr := filepath.EvalSymlinks(account.HomeDir)
+			if homeErr != nil {
+				t.Fatal(homeErr)
+			}
+			dir, homeErr = os.MkdirTemp(home, ".git-mirrorer-test-")
+			if homeErr != nil {
+				t.Fatal(homeErr)
+			}
+			t.Cleanup(func() { _ = os.RemoveAll(dir) })
+			return dir
+		}
+		if path == filepath.Dir(path) {
+			return dir
+		}
+	}
+}
 
 func Isolate(t *testing.T) {
 	t.Helper()
@@ -37,7 +73,7 @@ func Git(t *testing.T, dir string, args ...string) string {
 
 func Repository(t *testing.T, bare bool) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := TempDir(t)
 	args := []string{"init", "--initial-branch=main"}
 	if bare {
 		args = append(args, "--bare")

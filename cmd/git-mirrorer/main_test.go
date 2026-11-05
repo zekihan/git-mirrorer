@@ -20,7 +20,7 @@ import (
 
 func writeConfig(t *testing.T, source, dest string) (string, string) {
 	t.Helper()
-	dir := t.TempDir()
+	dir := testutil.TempDir(t)
 	filename := filepath.Join(dir, "config.yaml")
 	state := filepath.Join(dir, "state")
 	content := fmt.Sprintf("stateDir: %q\nrepositories:\n  - name: source\n    source: %q\n    destinations:\n      - name: destination\n        url: %q\n", state, source, dest)
@@ -74,7 +74,7 @@ func TestCLIValidationAndNoLFSDependency(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bin := t.TempDir()
+	bin := testutil.TempDir(t)
 	t.Setenv("PATH", bin)
 	var stdout, stderr bytes.Buffer
 	if code := run(t.Context(), []string{"--config", filename, "--check"}, &stdout, &stderr); code != 0 {
@@ -134,7 +134,7 @@ func TestSignalExitCodesAndCloneCleanup(t *testing.T) {
 	testutil.Isolate(t)
 	for _, signal := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
 		t.Run(signal.String(), func(t *testing.T) {
-			dir := t.TempDir()
+			dir := testutil.TempDir(t)
 			ready := filepath.Join(dir, "ready")
 			ssh := filepath.Join(dir, "ssh")
 			if err := os.WriteFile(ssh, []byte("#!/bin/sh\ntrap '' TERM\necho $$ > \"$MIRROR_READY\"\nexec sleep 60\n"), 0o700); err != nil {

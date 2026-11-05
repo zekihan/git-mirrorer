@@ -60,7 +60,7 @@ func TestRejectInvalidConfiguration(t *testing.T) {
 	}
 	for name, value := range cases {
 		t.Run(name, func(t *testing.T) {
-			_, err := Decode(strings.NewReader(value), t.TempDir())
+			_, err := Decode(strings.NewReader(value), testutil.TempDir(t))
 			if err == nil {
 				t.Fatal("accepted invalid config")
 			}
@@ -153,11 +153,7 @@ func TestSymlinkAncestorsAndConfigDirectory(t *testing.T) {
 
 func canonicalTemp(t *testing.T) string {
 	t.Helper()
-	path, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return path
+	return testutil.TempDir(t)
 }
 
 func TestLocalPathChangesAfterLoad(t *testing.T) {

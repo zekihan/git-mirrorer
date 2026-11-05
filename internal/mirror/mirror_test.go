@@ -25,7 +25,7 @@ func configured(t *testing.T, source string, destinations ...string) config.Conf
 	for i, dest := range destinations {
 		repo.Destinations = append(repo.Destinations, config.Destination{Name: fmt.Sprintf("dest-%d", i), URL: dest})
 	}
-	return config.Config{StateDir: t.TempDir(), Concurrency: 2, OperationTimeout: 10 * time.Second, Repositories: []config.Repository{repo}}
+	return config.Config{StateDir: testutil.TempDir(t), Concurrency: 2, OperationTimeout: 10 * time.Second, Repositories: []config.Repository{repo}}
 }
 
 func realRunner(t *testing.T, cfg config.Config) *Runner {
@@ -41,7 +41,7 @@ func TestPartialFailureAndStaleCache(t *testing.T) {
 	testutil.Isolate(t)
 	source, dest := testutil.Repository(t, false), testutil.Repository(t, true)
 	testutil.Commit(t, source, "a", "one")
-	cfg := configured(t, source, filepath.Join(t.TempDir(), "missing"), dest)
+	cfg := configured(t, source, filepath.Join(testutil.TempDir(t), "missing"), dest)
 	runner := realRunner(t, cfg)
 	result := runner.Run(t.Context())
 	if result.Outcome != Failed || result.Totals.Failed != 1 || result.Totals.Succeeded != 1 || result.Totals.Attempted != 2 {
@@ -205,7 +205,7 @@ func TestSourceFailureDoesNotStopOtherSources(t *testing.T) {
 	testutil.Commit(t, source, "a", "one")
 	cfg := configured(t, source, dest)
 	cfg.Concurrency = 1
-	bad := config.Repository{Name: "offline", Source: filepath.Join(t.TempDir(), "missing"), Destinations: []config.Destination{{Name: "backup", URL: filepath.Join(t.TempDir(), "unused")}}}
+	bad := config.Repository{Name: "offline", Source: filepath.Join(testutil.TempDir(t), "missing"), Destinations: []config.Destination{{Name: "backup", URL: filepath.Join(testutil.TempDir(t), "unused")}}}
 	cfg.Repositories = append([]config.Repository{bad}, cfg.Repositories...)
 	result := realRunner(t, cfg).Run(t.Context())
 	if result.Totals.Skipped != 1 || result.Totals.Succeeded != 1 || result.Sources[0].Error.Stage != "fetch" {
@@ -486,8 +486,8 @@ func TestLoadedEndpointIdentityPreventsPublication(t *testing.T) {
 			testutil.Isolate(t)
 			source, destination := testutil.Repository(t, false), testutil.Repository(t, true)
 			testutil.Commit(t, source, "a", "one")
-			input := fmt.Sprintf("stateDir: %q\nrepositories:\n- name: fixture\n  source: %q\n  destinations:\n  - name: backup\n    url: %q\n", filepath.Join(t.TempDir(), "state"), source, destination)
-			cfg, err := config.Decode(strings.NewReader(input), t.TempDir())
+			input := fmt.Sprintf("stateDir: %q\nrepositories:\n- name: fixture\n  source: %q\n  destinations:\n  - name: backup\n    url: %q\n", filepath.Join(testutil.TempDir(t), "state"), source, destination)
+			cfg, err := config.Decode(strings.NewReader(input), testutil.TempDir(t))
 			if err != nil {
 				t.Fatal(err)
 			}

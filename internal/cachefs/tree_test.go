@@ -9,10 +9,12 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/zekihan/git-mirrorer/internal/testutil"
 )
 
 func TestCleanupStopsAtEntryBudgetAndDeadline(t *testing.T) {
-	root := t.TempDir()
+	root := testutil.TempDir(t)
 	for i := range 256 {
 		if err := os.WriteFile(filepath.Join(root, fmt.Sprintf("%04d", i)), nil, 0o600); err != nil {
 			t.Fatal(err)
@@ -44,7 +46,7 @@ func TestCleanupStopsAtEntryBudgetAndDeadline(t *testing.T) {
 }
 
 func TestCleanupNeverFollowsSymlinkAndWalkLimitsDepth(t *testing.T) {
-	outside, root := t.TempDir(), t.TempDir()
+	outside, root := testutil.TempDir(t), testutil.TempDir(t)
 	target := filepath.Join(outside, "required")
 	if err := os.WriteFile(target, []byte("keep"), 0o600); err != nil {
 		t.Fatal(err)
@@ -58,7 +60,7 @@ func TestCleanupNeverFollowsSymlinkAndWalkLimitsDepth(t *testing.T) {
 	if got, err := os.ReadFile(target); err != nil || string(got) != "keep" {
 		t.Fatalf("outside path changed: %q %v", got, err)
 	}
-	root = t.TempDir()
+	root = testutil.TempDir(t)
 	path := root
 	for range 129 {
 		path = filepath.Join(path, "d")
@@ -72,7 +74,7 @@ func TestCleanupNeverFollowsSymlinkAndWalkLimitsDepth(t *testing.T) {
 }
 
 func TestPayloadHardlinksStillRequireTrustedInode(t *testing.T) {
-	root, external := t.TempDir(), t.TempDir()
+	root, external := testutil.TempDir(t), testutil.TempDir(t)
 	source := filepath.Join(external, "payload")
 	if err := os.WriteFile(source, []byte("payload"), 0o600); err != nil {
 		t.Fatal(err)

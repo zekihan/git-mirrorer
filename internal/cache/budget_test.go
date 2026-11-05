@@ -39,7 +39,7 @@ func writeFixture(t *testing.T, path string, data []byte) {
 func TestBudgetPreflightIncludesIdleSourcesAndAbandonedClones(t *testing.T) {
 	for _, name := range []string{"idle", ".clone-abandoned"} {
 		t.Run(name, func(t *testing.T) {
-			lease := acquireTestLease(t, t.TempDir(), "active")
+			lease := acquireTestLease(t, testutil.TempDir(t), "active")
 			limits := DefaultLimits()
 			limits.SourceBytes = 16
 			limits.TotalBytes = 32
@@ -54,7 +54,7 @@ func TestBudgetPreflightIncludesIdleSourcesAndAbandonedClones(t *testing.T) {
 }
 
 func TestBudgetStopsGrowingOperationAndReleasesLock(t *testing.T) {
-	lease := acquireTestLease(t, t.TempDir(), "active")
+	lease := acquireTestLease(t, testutil.TempDir(t), "active")
 	limits := DefaultLimits()
 	limits.SourceBytes = 16
 	limits.TotalBytes = 128
@@ -76,7 +76,7 @@ func TestBudgetStopsGrowingOperationAndReleasesLock(t *testing.T) {
 }
 
 func TestBudgetChecksCompletedFastWritesAndReserve(t *testing.T) {
-	lease := acquireTestLease(t, t.TempDir(), "active")
+	lease := acquireTestLease(t, testutil.TempDir(t), "active")
 	limits := DefaultLimits()
 	limits.SourceBytes = 16
 	err := lease.Mutate(t.Context(), limits, time.Second, func(context.Context) error {
@@ -96,7 +96,7 @@ func TestBudgetChecksCompletedFastWritesAndReserve(t *testing.T) {
 }
 
 func TestBudgetLockWaitHasDeadline(t *testing.T) {
-	lease := acquireTestLease(t, t.TempDir(), "active")
+	lease := acquireTestLease(t, testutil.TempDir(t), "active")
 	path := filepath.Join(filepath.Dir(filepath.Dir(lease.entry)), "locks", "budget.lock")
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
@@ -114,7 +114,7 @@ func TestBudgetLockWaitHasDeadline(t *testing.T) {
 }
 
 func TestStreamingScanEntryDeadlineObjectAndSymlinkLimits(t *testing.T) {
-	root := t.TempDir()
+	root := testutil.TempDir(t)
 	for i := range 256 {
 		writeFixture(t, filepath.Join(root, fmt.Sprintf("%04d", i)), nil)
 	}
@@ -127,7 +127,7 @@ func TestStreamingScanEntryDeadlineObjectAndSymlinkLimits(t *testing.T) {
 	if _, err := scan(ctx, root, usage{1 << 20, 1000, 100}); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("deadline: %v", err)
 	}
-	root = t.TempDir()
+	root = testutil.TempDir(t)
 	header := make([]byte, 12)
 	copy(header, "PACK")
 	binary.BigEndian.PutUint32(header[4:], 2)
@@ -136,12 +136,12 @@ func TestStreamingScanEntryDeadlineObjectAndSymlinkLimits(t *testing.T) {
 	if _, err := scan(t.Context(), root, usage{1 << 20, 1000, 100}); err == nil || !strings.Contains(err.Error(), "object budget") {
 		t.Fatalf("pack objects: %v", err)
 	}
-	root = t.TempDir()
+	root = testutil.TempDir(t)
 	writeFixture(t, filepath.Join(root, "objects", "ab", strings.Repeat("c", 38)), nil)
 	if used, err := scan(t.Context(), root, usage{1 << 20, 1000, 100}); err != nil || used.objects != 1 {
 		t.Fatalf("loose objects: %+v %v", used, err)
 	}
-	if err := os.Symlink(t.TempDir(), filepath.Join(root, "link")); err != nil {
+	if err := os.Symlink(testutil.TempDir(t), filepath.Join(root, "link")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := scan(t.Context(), root, usage{1 << 20, 1000, 100}); err == nil || !strings.Contains(err.Error(), "symlink") {
@@ -157,7 +157,7 @@ func TestCloneBudgetFailureDoesNotPublish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lease := acquireTestLease(t, t.TempDir(), source)
+	lease := acquireTestLease(t, testutil.TempDir(t), source)
 	limits := DefaultLimits()
 	limits.SourceBytes = 1
 	lease.SetLimits(limits)
@@ -175,7 +175,7 @@ func TestCloneBudgetFailureDoesNotPublish(t *testing.T) {
 }
 
 func TestOwnershipMetadataReadIsBounded(t *testing.T) {
-	lease := acquireTestLease(t, t.TempDir(), "source")
+	lease := acquireTestLease(t, testutil.TempDir(t), "source")
 	writeFixture(t, filepath.Join(lease.entry, "metadata.json"), make([]byte, 64*1024+1))
 	if err := lease.validateMetadata(t.Context()); err == nil || !strings.Contains(err.Error(), "metadata size") {
 		t.Fatalf("metadata bound: %v", err)
@@ -183,7 +183,7 @@ func TestOwnershipMetadataReadIsBounded(t *testing.T) {
 }
 
 func TestBudgetRejectsUnsafeStateDirectoryAndLock(t *testing.T) {
-	state := t.TempDir()
+	state := testutil.TempDir(t)
 	if err := os.Chmod(state, 0o777); err != nil {
 		t.Fatal(err)
 	}
@@ -191,9 +191,9 @@ func TestBudgetRejectsUnsafeStateDirectoryAndLock(t *testing.T) {
 		lease.Close()
 		t.Fatal("accepted writable shared state")
 	}
-	lease := acquireTestLease(t, t.TempDir(), "source")
+	lease := acquireTestLease(t, testutil.TempDir(t), "source")
 	lock := filepath.Join(filepath.Dir(filepath.Dir(lease.entry)), "locks", "budget.lock")
-	if err := os.Symlink(filepath.Join(t.TempDir(), "target"), lock); err != nil {
+	if err := os.Symlink(filepath.Join(testutil.TempDir(t), "target"), lock); err != nil {
 		t.Fatal(err)
 	}
 	called := false
@@ -204,7 +204,7 @@ func TestBudgetRejectsUnsafeStateDirectoryAndLock(t *testing.T) {
 }
 
 func TestCleanupRequiresLiveSourceLease(t *testing.T) {
-	lease := acquireTestLease(t, t.TempDir(), "source")
+	lease := acquireTestLease(t, testutil.TempDir(t), "source")
 	payload := filepath.Join(lease.Path, "lfs", "objects", "payload")
 	writeFixture(t, payload, []byte("required"))
 	if err := ForPath(lease.Path).ClearLFS(t.Context(), DefaultLimits()); err == nil {
@@ -227,7 +227,7 @@ func TestCleanupRequiresLiveSourceLease(t *testing.T) {
 func TestAccountingLockRejectsUnsafeModeAndHardlink(t *testing.T) {
 	for _, kind := range []string{"mode", "hardlink"} {
 		t.Run(kind, func(t *testing.T) {
-			state := t.TempDir()
+			state := testutil.TempDir(t)
 			lease, err := Acquire(state, "source")
 			if err != nil {
 				t.Fatal(err)
