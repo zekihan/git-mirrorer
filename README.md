@@ -306,8 +306,8 @@ The test Make targets use private temporary directories beneath `tmp/`. For dire
 `go test` invocations, set `TMPDIR` to a private directory under trusted ancestors.
 Tests create temporary local repositories and never use the user's configured
 remotes. Install Git LFS to run payload integration tests; CI requires it. Linux
-and macOS are supported; Windows binaries are not produced. CI pins golangci-lint
-2.13.2 and GoReleaser 2.18.1. Release archives target amd64/arm64 on Linux/macOS.
+and macOS are supported; Windows binaries are not produced. CI tool versions are
+pinned in `.github/workflows/pr.yaml`. Release archives target amd64/arm64 on Linux/macOS.
 Containers target linux/amd64 and linux/arm64. Publishing is performed by the release
 workflows on version tags, with container publication also available manually.
 
