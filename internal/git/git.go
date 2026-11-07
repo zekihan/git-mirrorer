@@ -16,7 +16,10 @@ import (
 	"github.com/zekihan/git-mirrorer/internal/cachefs"
 )
 
-type Client struct{ runner *Runner }
+type Client struct {
+	runner  *Runner
+	connect *connectTracker
+}
 
 type Changes struct {
 	Created   int `json:"created"`
@@ -43,7 +46,7 @@ func (c *Client) Clone(ctx context.Context, source, path string) error {
 		return errors.New("clone destination must not exist")
 	}
 	first := true
-	return c.retry(ctx, func(ctx context.Context) error {
+	return c.retry(ctx, source, func(ctx context.Context) error {
 		if !first {
 			cleanupCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
@@ -99,7 +102,7 @@ func (c *Client) Fetch(ctx context.Context, path, source string) error {
 	if err := checkLocalEndpoint(source); err != nil {
 		return err
 	}
-	return c.retry(ctx, func(ctx context.Context) error {
+	return c.retry(ctx, source, func(ctx context.Context) error {
 		return c.command(ctx, path, nil, nil, "fetch", "--atomic", "--prune", "--no-tags", "--no-recurse-submodules", "--", source, "+refs/*:refs/*")
 	})
 }
@@ -116,7 +119,7 @@ func (c *Client) Push(ctx context.Context, path, destination string, atomic bool
 		// Git reports an error for an empty-to-empty push. Verify that no refs
 		// need deleting instead of treating that already-matching state as failure.
 		remote := &nonemptyWriter{}
-		if err := c.retry(ctx, func(ctx context.Context) error {
+		if err := c.retry(ctx, destination, func(ctx context.Context) error {
 			remote.nonempty = false
 			return c.command(ctx, path, nil, remote, "ls-remote", "--refs", "--", destination)
 		}); err != nil {
@@ -135,7 +138,7 @@ func (c *Client) Push(ctx context.Context, path, destination string, atomic bool
 	}
 	args = append(args, "--", destination)
 	var parser *pushParser
-	err := c.retry(ctx, func(ctx context.Context) error {
+	err := c.retry(ctx, destination, func(ctx context.Context) error {
 		parser = &pushParser{}
 		err := c.command(ctx, path, nil, parser, args...)
 		parser.finish()
@@ -206,7 +209,7 @@ func (c *Client) LFSFetch(ctx context.Context, path, source string) error {
 	if err := c.prepareLFS(ctx, path); err != nil {
 		return err
 	}
-	return c.retry(ctx, func(ctx context.Context) error {
+	return c.retry(ctx, source, func(ctx context.Context) error {
 		return c.command(ctx, path, nil, nil, "-c", "remote.mirrorer-lfs.url="+source,
 			"-c", "lfs.concurrenttransfers=1",
 			"-c", "lfs.skipdownloaderrors=false", "lfs", "fetch", "--all", "mirrorer-lfs")
@@ -237,7 +240,7 @@ func (c *Client) LFSPush(ctx context.Context, path, destination string) error {
 	if size == 0 {
 		return nil
 	}
-	return c.retry(ctx, func(ctx context.Context) error {
+	return c.retry(ctx, destination, func(ctx context.Context) error {
 		if _, err := refs.Seek(0, io.SeekStart); err != nil {
 			return err
 		}

@@ -2,6 +2,7 @@ stateDir: .git-mirrorer
 concurrency: 4
 operationTimeout: 10m
 runTimeout: 0s
+connectRetry: 3m
 logLevel: info
 cache:
   sourceBytes: 5368709120
