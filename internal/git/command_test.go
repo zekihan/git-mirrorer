@@ -130,12 +130,12 @@ func TestCommandEnvironmentAndSSHConfiguration(t *testing.T) {
 	t.Setenv("GIT_NAMESPACE", "wrong")
 	c := newClient(t)
 	env := strings.Join(c.runner.Env, "\n")
-	if strings.Contains(env, "GIT_DIR=") || strings.Contains(env, "GIT_NAMESPACE=") || !strings.Contains(env, "GIT_SSH_COMMAND=ssh -p 2222 -o BatchMode=yes") {
+	if strings.Contains(env, "GIT_DIR=") || strings.Contains(env, "GIT_NAMESPACE=") || !strings.Contains(env, "GIT_SSH_COMMAND=ssh -p 2222 -o BatchMode=yes -o ConnectTimeout=20") {
 		t.Fatal("environment was not isolated or SSH config lost")
 	}
 	t.Setenv("GIT_SSH_COMMAND", "ssh -i '/path with spaces/key'")
 	c = newClient(t)
-	if !strings.Contains(strings.Join(c.runner.Env, "\n"), "GIT_SSH_COMMAND=ssh -i '/path with spaces/key' -o BatchMode=yes") {
+	if !strings.Contains(strings.Join(c.runner.Env, "\n"), "GIT_SSH_COMMAND=ssh -i '/path with spaces/key' -o BatchMode=yes -o ConnectTimeout=20") {
 		t.Fatal("explicit SSH command lost")
 	}
 }

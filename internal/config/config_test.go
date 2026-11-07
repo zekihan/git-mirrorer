@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zekihan/git-mirrorer/internal/testutil"
 )
@@ -23,7 +24,7 @@ func TestDefaultsAndRelativePaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Concurrency != 4 || cfg.OperationTimeout.String() != "10m0s" || cfg.RunTimeout != 0 || cfg.LogLevel != "info" {
+	if cfg.Concurrency != 4 || cfg.OperationTimeout.String() != "10m0s" || cfg.RunTimeout != 0 || cfg.ConnectRetry != 3*time.Minute || cfg.LogLevel != "info" {
 		t.Fatalf("defaults: %+v", cfg)
 	}
 	if cfg.StateDir != filepath.Join(base, ".git-mirrorer") || cfg.Repositories[0].Source != filepath.Join(base, "source.git") {
@@ -40,23 +41,24 @@ func TestDefaultsAndRelativePaths(t *testing.T) {
 
 func TestRejectInvalidConfiguration(t *testing.T) {
 	cases := map[string]string{
-		"unknown":               validYAML + "schedule: 1m\n",
-		"nested unknown":        validYAML + "        typo: true\n",
-		"duplicate":             "concurrency: 1\nconcurrency: 2\n" + validYAML,
-		"document":              validYAML + "---\n{}\n",
-		"empty":                 "repositories: []\n",
-		"zero workers":          "concurrency: 0\n" + validYAML,
-		"timeout":               "operationTimeout: 0s\n" + validYAML,
-		"negative run":          "runTimeout: -1s\n" + validYAML,
-		"level":                 "logLevel: verbose\n" + validYAML,
-		"self":                  strings.ReplaceAll(validYAML, "./backup.git", "./source.git"),
-		"cache overlap":         strings.ReplaceAll(validYAML, "./backup.git", "./.git-mirrorer/repos/a"),
-		"missing name":          strings.ReplaceAll(validYAML, "name: example", "name: ''"),
-		"duplicate source":      validYAML + "  - name: other\n    source: ./source.git\n    destinations:\n      - name: b\n        url: ./other.git\n",
-		"duplicate destination": validYAML + "  - name: other\n    source: ./other.git\n    destinations:\n      - name: b\n        url: ./backup.git\n",
-		"chain":                 validYAML + "  - name: other\n    source: ./backup.git\n    destinations:\n      - name: b\n        url: ./other.git\n",
-		"credential":            strings.ReplaceAll(validYAML, "./source.git", "https://user:SUPERSECRET@example.com/a"),
-		"typed secret":          strings.ReplaceAll(validYAML, "./source.git", "[SUPERSECRET]"),
+		"unknown":                validYAML + "schedule: 1m\n",
+		"nested unknown":         validYAML + "        typo: true\n",
+		"duplicate":              "concurrency: 1\nconcurrency: 2\n" + validYAML,
+		"document":               validYAML + "---\n{}\n",
+		"empty":                  "repositories: []\n",
+		"zero workers":           "concurrency: 0\n" + validYAML,
+		"timeout":                "operationTimeout: 0s\n" + validYAML,
+		"negative run":           "runTimeout: -1s\n" + validYAML,
+		"negative connect retry": "connectRetry: -1s\n" + validYAML,
+		"level":                  "logLevel: verbose\n" + validYAML,
+		"self":                   strings.ReplaceAll(validYAML, "./backup.git", "./source.git"),
+		"cache overlap":          strings.ReplaceAll(validYAML, "./backup.git", "./.git-mirrorer/repos/a"),
+		"missing name":           strings.ReplaceAll(validYAML, "name: example", "name: ''"),
+		"duplicate source":       validYAML + "  - name: other\n    source: ./source.git\n    destinations:\n      - name: b\n        url: ./other.git\n",
+		"duplicate destination":  validYAML + "  - name: other\n    source: ./other.git\n    destinations:\n      - name: b\n        url: ./backup.git\n",
+		"chain":                  validYAML + "  - name: other\n    source: ./backup.git\n    destinations:\n      - name: b\n        url: ./other.git\n",
+		"credential":             strings.ReplaceAll(validYAML, "./source.git", "https://user:SUPERSECRET@example.com/a"),
+		"typed secret":           strings.ReplaceAll(validYAML, "./source.git", "[SUPERSECRET]"),
 	}
 	for name, value := range cases {
 		t.Run(name, func(t *testing.T) {

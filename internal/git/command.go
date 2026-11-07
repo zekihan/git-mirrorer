@@ -63,8 +63,11 @@ func New(ctx context.Context, timeout time.Duration) (*Client, error) {
 		ssh = "ssh"
 	}
 	// A supplied command is trusted shell syntax, as in Git itself. Preserve its
-	// options and make noninteractive OpenSSH behavior explicit.
-	runner.Env = append(runner.Env, "GIT_SSH_COMMAND="+ssh+" -o BatchMode=yes", "GIT_SSH_VARIANT=ssh")
+	// options and make noninteractive OpenSSH behavior explicit. OpenSSH keeps the
+	// first value of an option, so options in a supplied command take precedence.
+	// ConnectTimeout bounds one attempt against a silently dropped TCP connection so
+	// connect retries get several tries inside their budget.
+	runner.Env = append(runner.Env, "GIT_SSH_COMMAND="+ssh+" -o BatchMode=yes -o ConnectTimeout=20", "GIT_SSH_VARIANT=ssh")
 	return &Client{runner: runner}, nil
 }
 

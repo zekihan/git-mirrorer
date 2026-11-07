@@ -34,6 +34,7 @@ stateDir: .git-mirrorer
 concurrency: 4
 operationTimeout: 10m
 runTimeout: 0s
+connectRetry: 3m
 logLevel: info
 cache:
   sourceBytes: 5368709120
@@ -58,7 +59,8 @@ The example shows all defaults. `repositories` must be nonempty. Every repositor
 needs a unique name, source, and at least one named destination. `lfs` defaults to
 false and destination `atomic` defaults to true. `concurrency` limits active source
 jobs; destinations for a source run sequentially. `operationTimeout` bounds each
-Git/LFS subprocess and the complete retry sequence for each network command. `runTimeout: 0s` disables the whole-run deadline.
+Git/LFS subprocess and the complete retry sequence for each network command. `runTimeout: 0s` disables the whole-run deadline. `connectRetry` is described under
+[command retries](#command-retries-and-whole-run-retries).
 
 Paths, including relative local repository paths, resolve from the configuration
 file's directory. Addresses support HTTPS, SSH URLs, SCP-style SSH addresses, and
@@ -92,20 +94,38 @@ configuration order, even when sources run concurrently.
 ### Command retries and whole-run retries
 
 Clone, fetch, push, LFS fetch/push, and the empty-source destination ref check
-retry recognized transient command failures up to three attempts total (the initial
-attempt plus at most two retries). Backoff waits are 1–1.5 seconds and then 2–3
-seconds. All attempts and waits for a network command share one
-`operationTimeout` budget; retries do not reset it. Cancellation or an earlier
-whole-run deadline stops both commands and backoff waits.
+retry recognized transient command failures. All attempts and waits for a network
+command share one `operationTimeout` budget; retries do not reset it. Cancellation
+or an earlier whole-run deadline stops both commands and backoff waits.
+
+**Connection phase.** A remote that has not yet answered, such as a fresh pod whose
+DNS or egress rules are still being programmed, is retried with exponential backoff
+(1 second doubling to 10 seconds, plus jitter) until `connectRetry` (default `3m`)
+has elapsed since the first attempt against that remote. Connection failures are name
+resolution failures, refused or timed-out TCP connections, unreachable networks, SSH
+`kex_exchange_identification`/banner failures, and HTTPS connect failures. The budget
+is tracked per `host:port` (SCP-style addresses use port 22, HTTPS 443) and shared by
+all concurrent workers, so an unreachable host costs one budget rather than one per
+repository. It ends for a host as soon as any command against it succeeds; local
+repositories have no budget. Later or already-contacted failures use the policy
+below. `connectRetry: 0s` disables the budget. SSH connections also get
+`-o ConnectTimeout=20` so a silently dropped connection leaves room for several
+attempts; options inside a supplied `GIT_SSH_COMMAND` take precedence.
+
+**Other transient failures** are retried up to three attempts total (the initial
+attempt plus at most two retries), with backoff waits of 1-1.5 seconds and then 2-3
+seconds.
 
 Retries require a failed Git/LFS command with a recognized diagnostic: connection
 reset/refused/timed out/closed, broken pipe, unreachable network or no route,
 temporary name-resolution failure, unexpected disconnect/remote hangup, early EOF,
-improper TLS termination, or HTTP 429/500/502/503/504. Authentication and host-key
-failures, missing repositories, rejected refs (including protected branches and
-non-fast-forward updates), corruption, and `could not resolve host` fail without
-retry. Permanent diagnostics take precedence over transient ones. Unrecognized
-errors, cancellation, and expired deadlines are not retried.
+improper TLS termination, SSH handshake failure, or HTTP 429/500/502/503/504.
+Authentication and host-key failures, missing repositories, rejected refs (including
+protected branches and non-fast-forward updates), and corruption fail without retry.
+Permanent diagnostics take precedence over transient ones. Name-resolution failures
+that do not say the failure is temporary are retried only while the host's
+`connectRetry` budget remains. Unrecognized errors, cancellation, and expired
+deadlines are not retried.
 
 Push retries use the same locked source snapshot; change counts describe only the
 final attempt, not cumulative changes. Pushes require atomic support by default,
@@ -172,7 +192,7 @@ Git pointer files are mirrored but their external payloads are not transferred.
 Normal Git credential helpers, SSH agent access, proxies, SSH config, and known-host
 verification remain available. Configure credentials and trusted hosts in advance;
 Git prompts are disabled. SSH uses the explicit `GIT_SSH_COMMAND`, then `GIT_SSH`,
-then `core.sshCommand`, or `ssh`, and appends `-o BatchMode=yes`. Custom commands
+then `core.sshCommand`, or `ssh`, and appends `-o BatchMode=yes -o ConnectTimeout=20`. Custom commands
 must accept OpenSSH options and must not override batch behavior. Repository-selection
 environment variables are removed and managed repository hooks are disabled.
 
