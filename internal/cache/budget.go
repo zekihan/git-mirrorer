@@ -130,7 +130,7 @@ func (l *Lease) checkBudget(ctx context.Context, limits Limits) error {
 	if err := syscall.Statfs(root, &stat); err != nil {
 		return err
 	}
-	if uint64(stat.Bavail) < uint64(limits.ReserveBytes)/uint64(stat.Bsize)+1 {
+	if uint64(stat.Bavail) < uint64(limits.ReserveBytes)/uint64(stat.Bsize)+1 { //nolint:unconvert // Statfs_t field types vary by platform
 		return errors.New("cache free-space reserve exhausted")
 	}
 	return ctx.Err()

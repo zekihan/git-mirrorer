@@ -86,7 +86,7 @@ func TestRetryPermanentFailure(t *testing.T) {
 	calls := 0
 	want := connectionError("missing necessary objects")
 	err := c.retry(t.Context(), "", func(context.Context) error { calls++; return want })
-	if calls != 1 || err != want {
+	if calls != 1 || !errors.Is(err, want) {
 		t.Fatalf("calls=%d err=%v", calls, err)
 	}
 }
