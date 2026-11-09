@@ -11,11 +11,12 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags 
 
 FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 RUN apk add --no-cache ca-certificates git git-lfs openssh-client \
-    && adduser -D -u 25090 git-mirrorer \
+    && addgroup -g 25090 git-mirrorer \
+    && adduser -D -u 25090 -G git-mirrorer -h /home/git-mirrorer git-mirrorer \
     && mkdir -p /data/.git-mirrorer \
-    && chown -R git-mirrorer:git-mirrorer /data
+    && chown -R 25090:25090 /data
 COPY --from=build /git-mirrorer /usr/local/bin/git-mirrorer
-USER git-mirrorer
+USER 25090:25090
 WORKDIR /data
 ENTRYPOINT ["git-mirrorer"]
 CMD ["--config", "/data/git-mirrorer.yaml"]
