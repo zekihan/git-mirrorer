@@ -100,11 +100,27 @@ func objectCount(path string) (int64, error) {
 	return 0, nil
 }
 
+// Retry only read-only budget scans, discarding partial accounting each time.
+// All attempts share the validation deadline and must finish a complete scan.
+func retryScan(ctx context.Context, scan func() (usage, error)) (usage, error) {
+	for attempt := 0; ; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return usage{}, err
+		}
+		used, err := scan()
+		if !errors.Is(err, cachefs.ErrFileChanged) || attempt == 2 {
+			return used, err
+		}
+	}
+}
+
 func (l *Lease) checkBudget(ctx context.Context, limits Limits) error {
 	ctx, cancel := context.WithTimeout(ctx, limits.ValidationTimeout)
 	defer cancel()
 	root := filepath.Dir(l.entry)
-	if _, err := scan(ctx, root, usage{limits.TotalBytes, limits.TotalEntries, limits.TotalObjects}); err != nil {
+	if _, err := retryScan(ctx, func() (usage, error) {
+		return scan(ctx, root, usage{limits.TotalBytes, limits.TotalEntries, limits.TotalObjects})
+	}); err != nil {
 		return fmt.Errorf("total cache: %w", err)
 	}
 	paths := []string{l.entry}
@@ -118,7 +134,9 @@ func (l *Lease) checkBudget(ctx context.Context, limits Limits) error {
 		} else if err != nil {
 			return err
 		}
-		used, err := scan(ctx, path, usage{limits.SourceBytes - source.bytes, limits.SourceEntries - source.entries, limits.SourceObjects - source.objects})
+		used, err := retryScan(ctx, func() (usage, error) {
+			return scan(ctx, path, usage{limits.SourceBytes - source.bytes, limits.SourceEntries - source.entries, limits.SourceObjects - source.objects})
+		})
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("source cache: %w", err)
 		}

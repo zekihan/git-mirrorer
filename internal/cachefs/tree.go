@@ -12,10 +12,19 @@ import (
 	"github.com/zekihan/git-mirrorer/internal/safepath"
 )
 
+// ErrFileChanged reports replacement of a regular file by another trusted
+// regular file. Read-only accounting may retry the entire walk on this error;
+// callers that mutate the tree must still fail closed.
+var ErrFileChanged = errors.New("cache file identity changed")
+
 // Walk streams batches, with a fixed depth limit and a caller-supplied entry
 // limit/deadline. visit runs after directory children, allowing bounded cleanup.
 // The caller must exclude concurrent hostile local writers from the managed tree.
 func Walk(ctx context.Context, path string, maxEntries int64, visit func(string, os.FileInfo) error) (int64, error) {
+	return walk(ctx, path, maxEntries, visit, nil)
+}
+
+func walk(ctx context.Context, path string, maxEntries int64, visit func(string, os.FileInfo) error, afterLstat func(string) error) (int64, error) {
 	var entriesSeen int64
 	root, err := safepath.Open(path, false)
 	if err != nil {
@@ -58,6 +67,11 @@ func Walk(ctx context.Context, path string, maxEntries int64, visit func(string,
 				}
 				if info.Mode()&os.ModeSymlink != 0 {
 					return errors.New("symlinked cache entry")
+				}
+				if afterLstat != nil {
+					if err := afterLstat(child); err != nil {
+						return err
+					}
 				}
 				if info.IsDir() {
 					childRoot, err := root.OpenRoot(entry.Name())
@@ -105,11 +119,14 @@ func Walk(ctx context.Context, path string, maxEntries int64, visit func(string,
 					if err != nil {
 						return err
 					}
-					if !os.SameFile(info, opened) {
-						return errors.New("cache file identity changed")
+					if !opened.Mode().IsRegular() {
+						return errors.New("cache contains a special file")
 					}
 					if err := safepath.Trusted(opened, false); err != nil {
 						return err
+					}
+					if !os.SameFile(info, opened) {
+						return ErrFileChanged
 					}
 					info = opened
 				}

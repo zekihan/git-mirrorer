@@ -12,9 +12,93 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zekihan/git-mirrorer/internal/cachefs"
 	"github.com/zekihan/git-mirrorer/internal/git"
 	"github.com/zekihan/git-mirrorer/internal/testutil"
 )
+
+func TestBudgetScanRetriesOnlyFileInstability(t *testing.T) {
+	for _, failures := range []int{0, 1, 2, 3} {
+		t.Run(fmt.Sprint(failures), func(t *testing.T) {
+			root := testutil.TempDir(t)
+			writeFixture(t, filepath.Join(root, "objects", "ab", strings.Repeat("c", 38)), []byte("payload"))
+			calls := 0
+			used, err := retryScan(t.Context(), func() (usage, error) {
+				calls++
+				if calls <= failures {
+					return usage{1000, 1000, 1000}, fmt.Errorf("wrapped: %w", cachefs.ErrFileChanged)
+				}
+				return scan(t.Context(), root, usage{7, 3, 1})
+			})
+			if failures == 3 {
+				if calls != 3 || !errors.Is(err, cachefs.ErrFileChanged) {
+					t.Fatalf("unbounded churn: calls=%d err=%v", calls, err)
+				}
+			} else if err != nil || calls != failures+1 || used != (usage{7, 3, 1}) {
+				t.Fatalf("accounting did not restart: calls=%d used=%+v err=%v", calls, used, err)
+			}
+		})
+	}
+	for _, failure := range []error{errors.New("symlinked cache entry"), errors.New("cache contains a special file"), errors.New("cache directory identity changed"), errors.New("cache byte budget exceeded"), os.ErrPermission} {
+		calls := 0
+		_, err := retryScan(t.Context(), func() (usage, error) {
+			calls++
+			return usage{}, failure
+		})
+		if calls != 1 || !errors.Is(err, failure) {
+			t.Fatalf("retried permanent failure: calls=%d err=%v", calls, err)
+		}
+	}
+}
+
+func TestBudgetScanRetryKeepsDeadline(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	calls := 0
+	_, err := retryScan(ctx, func() (usage, error) {
+		calls++
+		cancel()
+		return usage{}, cachefs.ErrFileChanged
+	})
+	if calls != 1 || !errors.Is(err, context.Canceled) {
+		t.Fatalf("retried canceled scan: calls=%d err=%v", calls, err)
+	}
+}
+
+func TestBudgetScanConcurrentAtomicReplacement(t *testing.T) {
+	lease := acquireTestLease(t, testutil.TempDir(t), "active")
+	target := filepath.Join(lease.entry, "FETCH_HEAD")
+	writeFixture(t, target, []byte("old"))
+	staging := filepath.Join(testutil.TempDir(t), "replacement")
+	limits := DefaultLimits()
+	limits.SourceBytes = 3
+	limits.TotalBytes = 3
+	for i := range 100 {
+		writeFixture(t, staging, []byte("new"))
+		done := make(chan error, 1)
+		go func() {
+			time.Sleep(time.Duration(i) * time.Microsecond)
+			done <- os.Rename(staging, target)
+		}()
+		err := lease.checkBudget(t.Context(), limits)
+		if renameErr := <-done; renameErr != nil {
+			t.Fatal(renameErr)
+		}
+		if err != nil {
+			t.Fatalf("atomic replacement failed budget scan: %v", err)
+		}
+	}
+	if err := lease.checkBudget(t.Context(), limits); err != nil {
+		t.Fatalf("quiescent final scan: %v", err)
+	}
+	writeFixture(t, staging, []byte("oversized"))
+	if err := os.Rename(staging, target); err != nil {
+		t.Fatal(err)
+	}
+	if err := lease.checkBudget(t.Context(), limits); err == nil || !strings.Contains(err.Error(), "byte budget") {
+		t.Fatalf("accepted oversized replacement: %v", err)
+	}
+}
 
 func acquireTestLease(t *testing.T, state, source string) *Lease {
 	t.Helper()
