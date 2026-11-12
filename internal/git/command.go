@@ -79,8 +79,8 @@ func cleanEnvironment(env []string) []string {
 		"GIT_CONFIG_PARAMETERS": true, "GIT_CONFIG_COUNT": true,
 		"GIT_SSH_COMMAND": true, "GIT_SSH_VARIANT": true, "GIT_SSH": true,
 		"GIT_TERMINAL_PROMPT": true, "GCM_INTERACTIVE": true, "LC_ALL": true,
-		"GIT_LFS_SKIP_SMUDGE": true,
-		"GIT_LFS_SKIP_PUSH":   true, "GIT_LFS_SKIP_DOWNLOAD_ERRORS": true,
+		"GIT_LFS_SKIP_SMUDGE": true, "GIT_DEFAULT_REF_FORMAT": true,
+		"GIT_LFS_SKIP_PUSH": true, "GIT_LFS_SKIP_DOWNLOAD_ERRORS": true,
 	}
 	result := make([]string, 0, len(env)+5)
 	for _, entry := range env {

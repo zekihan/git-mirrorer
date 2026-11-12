@@ -153,3 +153,69 @@ func TestMappedRefNamespaceCollisionDoesNotWriteDestination(t *testing.T) {
 		t.Fatal("collision wrote destination")
 	}
 }
+
+func TestMappedMirrorIgnoresInheritedRefFormat(t *testing.T) {
+	testutil.Isolate(t)
+	source, dest := testutil.Repository(t, false), testutil.Repository(t, true)
+	first := testutil.Commit(t, source, "a", "one")
+	for _, ref := range []string{"refs/pull/1/head", "refs/heads/feature", "refs/tags/v1"} {
+		testutil.Git(t, source, "update-ref", ref, first)
+	}
+	c := newClient(t)
+	cache := filepath.Join(testutil.TempDir(t), "mirror.git")
+	if err := c.Clone(t.Context(), source, cache); err != nil {
+		t.Fatal(err)
+	}
+	mapping := RefMapping{From: "refs/pull/", To: "refs/upstream/github/pull/"}
+	if _, err := c.Push(t.Context(), cache, dest, false, mapping); err != nil {
+		t.Fatal(err)
+	}
+	before := testutil.Refs(t, dest)
+	t.Setenv("GIT_DEFAULT_REF_FORMAT", "reftable")
+	c = newClient(t)
+	if _, err := c.Push(t.Context(), cache, dest, false, mapping); err != nil {
+		t.Fatal(err)
+	}
+	if testutil.Refs(t, dest) != before {
+		t.Fatal("inherited ref format changed destination")
+	}
+}
+
+func TestMappedMirrorRejectsMisreadViewBeforePush(t *testing.T) {
+	testutil.Isolate(t)
+	source, dest := testutil.Repository(t, false), testutil.Repository(t, true)
+	first := testutil.Commit(t, source, "a", "one")
+	testutil.Git(t, source, "update-ref", "refs/pull/1/head", first)
+	c := newClient(t)
+	cache := filepath.Join(testutil.TempDir(t), "mirror.git")
+	if err := c.Clone(t.Context(), source, cache); err != nil {
+		t.Fatal(err)
+	}
+	mapping := RefMapping{From: "refs/pull/", To: "refs/upstream/github/pull/"}
+	if _, err := c.Push(t.Context(), cache, dest, false, mapping); err != nil {
+		t.Fatal(err)
+	}
+	before := testutil.Refs(t, dest)
+	wrapper := filepath.Join(testutil.TempDir(t), "git-wrapper")
+	if err := os.WriteFile(wrapper, []byte(`#!/bin/sh
+case "$PWD" in
+    */.mapped-refs-*)
+        for arg in "$@"; do
+            case "$arg" in for-each-ref) exit 0 ;; esac
+        done
+        ;;
+esac
+exec "$REAL_GIT" "$@"
+`), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	c.runner.Env = append(c.runner.Env, "REAL_GIT="+c.runner.Executable)
+	c.runner.Executable = wrapper
+	_, err := c.Push(t.Context(), cache, dest, false, mapping)
+	if err == nil || !strings.Contains(err.Error(), "does not match source inventory") {
+		t.Fatalf("misread view not rejected: %v", err)
+	}
+	if testutil.Refs(t, dest) != before {
+		t.Fatal("misread view changed destination")
+	}
+}

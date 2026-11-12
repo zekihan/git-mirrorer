@@ -141,5 +141,16 @@ func (c *Client) pushMapped(ctx context.Context, path, destination string, atomi
 			return Changes{}, err
 		}
 	}
+	var actual refBuffer
+	if err = c.command(ctx, scratch, nil, &actual, "for-each-ref", fmt.Sprintf("--count=%d", mappedRefLimit+1), "--sort=refname", "--format=%(objectname) %(refname)", "refs/"); err != nil {
+		return Changes{}, err
+	}
+	expected := strings.Join(lines, "\n")
+	if len(lines) > 0 {
+		expected += "\n"
+	}
+	if actual.String() != expected {
+		return Changes{}, errors.New("mapped ref view does not match source inventory")
+	}
 	return c.push(ctx, scratch, destination, atomic)
 }
