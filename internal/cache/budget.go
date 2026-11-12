@@ -47,12 +47,14 @@ func (l Limits) Validate() error {
 
 type usage struct{ bytes, entries, objects int64 }
 
+var walkTree = cachefs.Walk
+
 // scan streams directory batches instead of WalkDir's unbounded sorted listing.
 // The cache is private to the service account; local concurrent hostile writers
 // are outside its trust model. Links and special files are always rejected.
 func scan(ctx context.Context, path string, limit usage) (usage, error) {
 	var used usage
-	entries, err := cachefs.Walk(ctx, path, limit.entries, func(path string, info os.FileInfo) error {
+	entries, err := walkTree(ctx, path, limit.entries, func(path string, info os.FileInfo) error {
 		if info.Mode().IsRegular() {
 			if info.Size() > limit.bytes-used.bytes {
 				return errors.New("cache byte budget exceeded")
@@ -102,12 +104,12 @@ func objectCount(path string) (int64, error) {
 
 // Retry only read-only budget scans, discarding partial accounting each time.
 // All attempts share the validation deadline and must finish a complete scan.
-func retryScan(ctx context.Context, scan func() (usage, error)) (usage, error) {
+func retryScan(ctx context.Context, inspect func() (usage, error)) (usage, error) {
 	for attempt := 0; ; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return usage{}, err
 		}
-		used, err := scan()
+		used, err := inspect()
 		if !errors.Is(err, cachefs.ErrFileChanged) || attempt == 2 {
 			return used, err
 		}

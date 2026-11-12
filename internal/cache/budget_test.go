@@ -65,38 +65,75 @@ func TestBudgetScanRetryKeepsDeadline(t *testing.T) {
 	}
 }
 
-func TestBudgetScanConcurrentAtomicReplacement(t *testing.T) {
-	lease := acquireTestLease(t, testutil.TempDir(t), "active")
-	target := filepath.Join(lease.entry, "FETCH_HEAD")
-	writeFixture(t, target, []byte("old"))
-	staging := filepath.Join(testutil.TempDir(t), "replacement")
-	limits := DefaultLimits()
-	limits.SourceBytes = 3
-	limits.TotalBytes = 3
-	for i := range 100 {
-		writeFixture(t, staging, []byte("new"))
-		done := make(chan error, 1)
-		go func() {
-			time.Sleep(time.Duration(i) * time.Microsecond)
-			done <- os.Rename(staging, target)
-		}()
-		err := lease.checkBudget(t.Context(), limits)
-		if renameErr := <-done; renameErr != nil {
-			t.Fatal(renameErr)
+func TestBudgetCheckRetriesAtomicReplacement(t *testing.T) {
+	for _, scope := range []string{"total", "source"} {
+		for _, tc := range []struct {
+			name      string
+			failures  int
+			payload   string
+			wantError string
+		}{
+			{"one-replacement", 1, "new", ""},
+			{"two-replacements", 2, "new", ""},
+			{"continuous-churn", 3, "new", "identity changed"},
+			{"oversized-replacement", 1, "oversized", "byte budget"},
+		} {
+			t.Run(scope+"/"+tc.name, func(t *testing.T) {
+				lease := acquireTestLease(t, testutil.TempDir(t), "active")
+				target := filepath.Join(lease.entry, "FETCH_HEAD")
+				writeFixture(t, target, []byte("x"))
+				staging := filepath.Join(testutil.TempDir(t), "replacement")
+				limits := DefaultLimits()
+				limits.SourceBytes = 3
+				limits.TotalBytes = 3
+				scanRoot := filepath.Dir(lease.entry)
+				if scope == "source" {
+					scanRoot = lease.entry
+					limits.TotalBytes = 100
+				}
+				originalWalk := walkTree
+				t.Cleanup(func() { walkTree = originalWalk })
+				attempts, replacements := 0, 0
+				walkTree = func(ctx context.Context, root string, maxEntries int64, visit func(string, os.FileInfo) error) (int64, error) {
+					if root != scanRoot {
+						return originalWalk(ctx, root, maxEntries, visit)
+					}
+					attempts++
+					return originalWalk(ctx, root, maxEntries, func(path string, info os.FileInfo) error {
+						if err := visit(path, info); err != nil {
+							return err
+						}
+						if path != target || attempts > tc.failures {
+							return nil
+						}
+						// Fail after partial accounting and a real rename. cachefs tests
+						// separately force the Lstat/Open boundary that emits this error.
+						writeFixture(t, staging, []byte(tc.payload))
+						done := make(chan error, 1)
+						go func() { done <- os.Rename(staging, path) }()
+						if err := <-done; err != nil {
+							return err
+						}
+						replacements++
+						return cachefs.ErrFileChanged
+					})
+				}
+				err := lease.checkBudget(t.Context(), limits)
+				if attempts != min(tc.failures+1, 3) || replacements != tc.failures {
+					t.Fatalf("retry wiring: attempts=%d replacements=%d err=%v", attempts, replacements, err)
+				}
+				if tc.wantError == "" {
+					if err != nil {
+						t.Fatalf("atomic replacement failed budget check: %v", err)
+					}
+				} else if err == nil || !strings.Contains(err.Error(), scope+" cache") || !strings.Contains(err.Error(), tc.wantError) {
+					t.Fatalf("expected %s cache: %s; got %v", scope, tc.wantError, err)
+				}
+				if (tc.failures == 3) != errors.Is(err, cachefs.ErrFileChanged) {
+					t.Fatalf("unexpected retry exhaustion: %v", err)
+				}
+			})
 		}
-		if err != nil {
-			t.Fatalf("atomic replacement failed budget scan: %v", err)
-		}
-	}
-	if err := lease.checkBudget(t.Context(), limits); err != nil {
-		t.Fatalf("quiescent final scan: %v", err)
-	}
-	writeFixture(t, staging, []byte("oversized"))
-	if err := os.Rename(staging, target); err != nil {
-		t.Fatal(err)
-	}
-	if err := lease.checkBudget(t.Context(), limits); err == nil || !strings.Contains(err.Error(), "byte budget") {
-		t.Fatalf("accepted oversized replacement: %v", err)
 	}
 }
 

@@ -15,7 +15,7 @@ import (
 )
 
 func TestWalkClassifiesAtomicReplacement(t *testing.T) {
-	for _, kind := range []string{"regular", "symlink", "fifo", "directory", "writable", "hardlink", "owner", "gone"} {
+	for _, kind := range []string{"regular", "symlink", "fifo", "directory", "writable", "writable-hardlink", "owner", "gone"} {
 		t.Run(kind, func(t *testing.T) {
 			if kind == "owner" && os.Geteuid() != 0 {
 				t.Skip("changing inode ownership requires root")
@@ -42,12 +42,12 @@ func TestWalkClassifiesAtomicReplacement(t *testing.T) {
 				if err := os.WriteFile(replacement, []byte("new payload"), 0o600); err != nil {
 					t.Fatal(err)
 				}
-				if kind == "writable" || kind == "hardlink" {
+				if kind == "writable" || kind == "writable-hardlink" {
 					if err := os.Chmod(replacement, 0o666); err != nil {
 						t.Fatal(err)
 					}
 				}
-				if kind == "hardlink" {
+				if kind == "writable-hardlink" {
 					if err := os.Link(replacement, replacement+".alias"); err != nil {
 						t.Fatal(err)
 					}
