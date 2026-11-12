@@ -73,8 +73,8 @@ func (b *observedBackend) Prepare(ctx context.Context, source string) (string, f
 	return b.Backend.Prepare(ctx, source)
 }
 
-func (b *observedBackend) Push(ctx context.Context, path, dest string, atomic bool) (git.Changes, error) {
-	changes, err := b.Backend.Push(ctx, path, dest, atomic)
+func (b *observedBackend) Push(ctx context.Context, path, dest string, atomic bool, mappings ...git.RefMapping) (git.Changes, error) {
+	changes, err := b.Backend.Push(ctx, path, dest, atomic, mappings...)
 	b.pushCount++
 	if b.pushCount == 1 {
 		b.afterFirstPush()
@@ -150,7 +150,7 @@ func (b *fakeBackend) Prepare(ctx context.Context, source string) (string, func(
 	}
 	return source, release, "fetch", b.prepareError
 }
-func (b *fakeBackend) Push(_ context.Context, _, destination string, _ bool) (git.Changes, error) {
+func (b *fakeBackend) Push(_ context.Context, _, destination string, _ bool, _ ...git.RefMapping) (git.Changes, error) {
 	b.event("push")
 	if b.pushed != nil {
 		b.pushed <- destination
@@ -516,5 +516,23 @@ func TestLoadedEndpointIdentityPreventsPublication(t *testing.T) {
 				t.Fatalf("destination was used: %+v", result)
 			}
 		})
+	}
+}
+
+func TestDestinationRefMappingDoesNotAffectOtherDestinations(t *testing.T) {
+	testutil.Isolate(t)
+	source, mapped, plain := testutil.Repository(t, false), testutil.Repository(t, true), testutil.Repository(t, true)
+	first := testutil.Commit(t, source, "a", "one")
+	testutil.Git(t, source, "update-ref", "refs/pull/1/head", first)
+	testutil.Git(t, mapped, "config", "receive.hideRefs", "refs/pull/")
+	cfg := configured(t, source, mapped, plain)
+	cfg.Repositories[0].Destinations[0].RefMappings = []git.RefMapping{{From: "refs/pull/", To: "refs/upstream/github/pull/"}}
+	result := realRunner(t, cfg).Run(t.Context())
+	if result.Outcome != Succeeded {
+		t.Fatalf("mapping run: %+v", result)
+	}
+	testutil.EqualRefs(t, source, plain)
+	if testutil.Refs(t, mapped) != strings.ReplaceAll(testutil.Refs(t, source), "refs/pull/", "refs/upstream/github/pull/") {
+		t.Fatal("runner did not apply destination mapping")
 	}
 }

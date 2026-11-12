@@ -71,7 +71,7 @@ type Report struct {
 // Backend owns one locked source snapshot until its release function is called.
 type Backend interface {
 	Prepare(context.Context, string) (path string, release func() error, stage string, err error)
-	Push(context.Context, string, string, bool) (git.Changes, error)
+	Push(context.Context, string, string, bool, ...git.RefMapping) (git.Changes, error)
 	LFSFetch(context.Context, string, string) error
 	LFSPush(context.Context, string, string) error
 }
@@ -129,8 +129,19 @@ func (b CachedGit) policy() (cache.Limits, time.Duration) {
 	return limits, timeout
 }
 
-func (b CachedGit) Push(ctx context.Context, path, destination string, atomic bool) (git.Changes, error) {
-	return b.Client.Push(ctx, path, destination, atomic)
+func (b CachedGit) Push(ctx context.Context, path, destination string, atomic bool, mappings ...git.RefMapping) (git.Changes, error) {
+	if len(mappings) == 0 {
+		return b.Client.Push(ctx, path, destination, atomic)
+	}
+	lease := cache.ForPath(path)
+	limits, timeout := b.policy()
+	var changes git.Changes
+	err := lease.Mutate(ctx, limits, timeout, func(ctx context.Context) error {
+		var err error
+		changes, err = b.Client.Push(ctx, path, destination, atomic, mappings...)
+		return err
+	})
+	return changes, err
 }
 func (b CachedGit) LFSFetch(ctx context.Context, path, source string) error {
 	// Prepare's source lease is still held. Use it for budget accounting without
@@ -296,7 +307,7 @@ func (r *Runner) runSource(ctx context.Context, repo config.Repository) (result 
 			}
 			if err == nil {
 				stage = "push"
-				destination.Changes, err = r.Git.Push(operationCtx, path, dest.URL, dest.AtomicEnabled())
+				destination.Changes, err = r.Git.Push(operationCtx, path, dest.URL, dest.AtomicEnabled(), dest.RefMappings...)
 			}
 			destination.Duration = time.Since(destStart)
 			if err != nil {

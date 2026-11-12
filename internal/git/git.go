@@ -107,7 +107,14 @@ func (c *Client) Fetch(ctx context.Context, path, source string) error {
 	})
 }
 
-func (c *Client) Push(ctx context.Context, path, destination string, atomic bool) (Changes, error) {
+func (c *Client) Push(ctx context.Context, path, destination string, atomic bool, mappings ...RefMapping) (Changes, error) {
+	if len(mappings) > 0 {
+		return c.pushMapped(ctx, path, destination, atomic, mappings)
+	}
+	return c.push(ctx, path, destination, atomic)
+}
+
+func (c *Client) push(ctx context.Context, path, destination string, atomic bool) (Changes, error) {
 	if err := checkLocalEndpoint(destination); err != nil {
 		return Changes{}, err
 	}

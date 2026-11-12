@@ -81,7 +81,29 @@ configuration support, HTTP endpoint, or internal scheduler.
 ## Mirroring and failures
 
 All source-advertised refs under `refs/` are mirrored, including tags, branches,
-notes, and custom refs. Hidden refs cannot be fetched. Hosts may reject protected
+notes, and custom refs. Hidden refs cannot be fetched. Per-destination `refMappings` can relocate whole
+ref namespaces, for example when preserving GitHub pull refs on Forgejo:
+
+```yaml
+refMappings:
+  - from: refs/pull/
+    to: refs/upstream/github/pull/
+```
+
+Prefixes must start with `refs/` and end with `/`; overlapping prefixes and
+chains are rejected. Unmatched refs keep their names. A collision with another
+source ref fails before any ref push. The source cache and other destinations
+remain unchanged. Mapped refs are force-updated and pruned by the same mirror
+operation, so removing a source pull ref also removes its mapped destination
+ref. Configure this before the first push to a new destination; changing a
+mapping on an existing mirror can rename or delete destination refs.
+
+Mapping uses a private temporary bare view borrowing objects from the locked
+source cache. Its inventory is bounded to 100,000 refs and 32 MiB; exceeding
+either bound fails the destination. Temporary refs are removed on success or
+failure. LFS payloads are selected from the original snapshot, so mapping does
+not change which payloads are uploaded. Remote hidden refs remain governed by
+the destination forge. Hosts may reject protected
 or host-managed refs; these are reported as failed destinations. Remote `HEAD`,
 default-branch settings, access rules, issues, releases, and submodule repositories
 are not synchronized. Configure each submodule repository separately if needed.

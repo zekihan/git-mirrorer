@@ -275,3 +275,18 @@ func TestLocalGitDirectoryAliases(t *testing.T) {
 		t.Fatalf("independent mapping changed: %+v, %v", cfg, err)
 	}
 }
+
+func TestDestinationRefMappings(t *testing.T) {
+	text := validYAML + "        refMappings:\n          - from: refs/pull/\n            to: refs/upstream/github/pull/\n"
+	cfg, err := Decode(strings.NewReader(text), canonicalTemp(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mappings := cfg.Repositories[0].Destinations[0].RefMappings
+	if len(mappings) != 1 || mappings[0].From != "refs/pull/" || mappings[0].To != "refs/upstream/github/pull/" {
+		t.Fatal("mapping not decoded")
+	}
+	if _, err := Decode(strings.NewReader(strings.ReplaceAll(text, "refs/upstream/github/pull/", "refs/pull/")), canonicalTemp(t)); err == nil {
+		t.Fatal("ambiguous mapping accepted")
+	}
+}

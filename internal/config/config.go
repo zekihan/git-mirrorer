@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	"github.com/zekihan/git-mirrorer/internal/cache"
+	"github.com/zekihan/git-mirrorer/internal/git"
 	"github.com/zekihan/git-mirrorer/internal/safepath"
 	"gopkg.in/yaml.v3"
 )
@@ -36,10 +37,11 @@ type Repository struct {
 }
 
 type Destination struct {
-	Name              string `yaml:"name"`
-	URL               string `yaml:"url"`
-	Atomic            *bool  `yaml:"atomic"`
-	TrustedLocalHooks bool   `yaml:"trustedLocalHooks"`
+	RefMappings       []git.RefMapping `yaml:"refMappings"`
+	Name              string           `yaml:"name"`
+	URL               string           `yaml:"url"`
+	Atomic            *bool            `yaml:"atomic"`
+	TrustedLocalHooks bool             `yaml:"trustedLocalHooks"`
 }
 
 func (d Destination) AtomicEnabled() bool { return d.Atomic == nil || *d.Atomic }
@@ -133,6 +135,9 @@ func (c *Config) validate(base string) error {
 				return fmt.Errorf("%s.destinations[%d].name must be nonempty and unique, without surrounding whitespace or control characters", field, j)
 			}
 			destNames[dest.Name] = true
+			if err := git.ValidateRefMappings(dest.RefMappings); err != nil {
+				return fmt.Errorf("%s.destinations[%d]: %w", field, j, err)
+			}
 			dest.URL, err = c.address(base, dest.URL)
 			if err != nil {
 				return fmt.Errorf("%s.destinations[%d].url: %w", field, j, err)
