@@ -27,7 +27,7 @@ jobs:
           python3 -m pip install -r .github/scripts/requirements-policy.txt
           python3 -m unittest discover -s .github/scripts -p 'test_workflow_policy.py'
           python3 .github/scripts/check_workflows.py
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
       - name: Verify Git LFS
@@ -57,7 +57,7 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
       - run: command -v git-lfs || brew install git-lfs
