@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -209,7 +210,7 @@ func (c *Client) LFSFetch(ctx context.Context, path, source string) error {
 	if err := c.prepareLFS(ctx, path); err != nil {
 		return err
 	}
-	args := []string{"-c", "remote.mirrorer-lfs.url=" + source,
+	args := []string{"-c", "remote.mirrorer-lfs.url=" + lfsAddress(source),
 		"-c", "lfs.concurrenttransfers=1",
 		"-c", "lfs.skipdownloaderrors=false", "lfs", "fetch", "--all", "mirrorer-lfs"}
 	err := c.command(ctx, path, nil, nil, "symbolic-ref", "--quiet", "HEAD")
@@ -275,11 +276,19 @@ func (c *Client) LFSPush(ctx context.Context, path, destination string) error {
 			if _, err := refs.Seek(0, io.SeekStart); err != nil {
 				return err
 			}
-			return c.command(ctx, path, refs, nil, "-c", "remote.mirrorer-lfs.url="+destination,
+			return c.command(ctx, path, refs, nil, "-c", "remote.mirrorer-lfs.url="+lfsAddress(destination),
 				"-c", "lfs.concurrenttransfers=1",
 				"-c", "lfs.allowincompletepush=false", "lfs", "push", "--all", "mirrorer-lfs", "--stdin")
 		})
 	})
+}
+
+func lfsAddress(address string) string {
+	if !filepath.IsAbs(address) {
+		return address
+	}
+	// Git LFS parses local endpoints as URLs. Escape literal URL delimiters.
+	return (&url.URL{Scheme: "file", Path: address}).String()
 }
 
 func (c *Client) withLFSRefList(ctx context.Context, path, format string, transfer func(*os.File) error) error {
