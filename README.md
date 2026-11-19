@@ -115,10 +115,9 @@ configuration order, even when sources run concurrently.
 
 ### Command retries and whole-run retries
 
-Clone, fetch, push, LFS fetch/push, and the empty-source destination ref check
-retry recognized transient command failures. All attempts and waits for a network
-command share one `operationTimeout` budget; retries do not reset it. Cancellation
-or an earlier whole-run deadline stops both commands and backoff waits.
+Clone, fetch, push, and LFS fetch/push retry recognized transient command failures.
+All attempts and waits for a network command share one `operationTimeout` budget.
+Cancellation or an earlier whole-run deadline stops both commands and backoff waits.
 
 **Connection phase.** A remote that has not yet answered, such as a fresh pod whose
 DNS or egress rules are still being programmed, is retried with exponential backoff
@@ -168,8 +167,9 @@ the previous run. Successful destinations tolerate repetition. External whole-ru
 retries have their own scheduling policy, separate from the bounded command retries
 above.
 
-An empty source removes all deletable destination refs. If both sides have no refs,
-the tool checks the destination and reports success without issuing an empty push.
+An empty source removes all deletable refs advertised by the destination's push
+service. If Git reports that the mirror push has no refs to send, the tool reports
+success with zero ref changes.
 
 | Exit | Meaning |
 | --- | --- |

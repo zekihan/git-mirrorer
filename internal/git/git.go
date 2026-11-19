@@ -122,20 +122,6 @@ func (c *Client) push(ctx context.Context, path, destination string, atomic bool
 	if err := c.command(ctx, path, nil, &local, "for-each-ref", "--count=1", "--format=%(refname)", "refs/"); err != nil {
 		return Changes{}, err
 	}
-	if local.Len() == 0 {
-		// Git reports an error for an empty-to-empty push. Verify that no refs
-		// need deleting instead of treating that already-matching state as failure.
-		remote := &nonemptyWriter{}
-		if err := c.retry(ctx, destination, func(ctx context.Context) error {
-			remote.nonempty = false
-			return c.command(ctx, path, nil, remote, "ls-remote", "--refs", "--", destination)
-		}); err != nil {
-			return Changes{}, err
-		}
-		if !remote.nonempty {
-			return Changes{}, nil
-		}
-	}
 	args := []string{"push", "--mirror", "--porcelain", "--no-recurse-submodules"}
 	if filepath.IsAbs(destination) && ctx.Value(trustedLocalHooksKey{}) != true {
 		args = append(args, "--receive-pack=git -c core.hooksPath="+os.DevNull+" receive-pack")
@@ -155,6 +141,9 @@ func (c *Client) push(ctx context.Context, path, destination string, atomic bool
 			}
 			return errors.New("destination rejected refs")
 		}
+		if local.Len() == 0 && parser.changes == (Changes{}) && emptyMirrorPush(err) {
+			return nil
+		}
 		return err
 	})
 	if parser == nil {
@@ -163,11 +152,14 @@ func (c *Client) push(ctx context.Context, path, destination string, atomic bool
 	return parser.changes, err
 }
 
-type nonemptyWriter struct{ nonempty bool }
-
-func (w *nonemptyWriter) Write(data []byte) (int, error) {
-	w.nonempty = w.nonempty || len(data) > 0
-	return len(data), nil
+func emptyMirrorPush(err error) bool {
+	// Only receive-pack advertises the refs available for push. Git's send-pack
+	// emits these two lines when the mirror has no source or destination refs
+	// to send. Some transports then exit 1 instead of reporting a no-op.
+	const noRefs = "\nNo refs in common and none specified; doing nothing.\nPerhaps you should specify a branch.\n"
+	var commandErr *CommandError
+	return errors.As(err, &commandErr) && commandErr.ExitCode == 1 &&
+		strings.Contains("\n"+commandErr.Detail+"\n", noRefs)
 }
 
 // Parse incrementally, retaining only the status prefix of each porcelain line.
@@ -314,5 +306,7 @@ func (c *Client) Reclaim(ctx context.Context, path string) error {
 	if err := c.command(ctx, path, nil, nil, "reflog", "expire", "--expire=now", "--all"); err != nil {
 		return err
 	}
-	return c.command(ctx, path, nil, nil, "-c", "pack.threads=1", "-c", "pack.windowMemory=64m", "-c", "gc.cruftPacks=false", "-c", "gc.autoDetach=false", "-c", "gc.detach=false", "gc", "--prune=now")
+	// The source lease excludes other writers. Git's gc.pid can outlive an
+	// interrupted process group and name a host from a previous run.
+	return c.command(ctx, path, nil, nil, "-c", "pack.threads=1", "-c", "pack.windowMemory=64m", "-c", "gc.cruftPacks=false", "-c", "gc.autoDetach=false", "-c", "gc.detach=false", "gc", "--force", "--prune=now")
 }
