@@ -4,7 +4,20 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/zekihan/git-mirrorer/internal/safepath"
 )
+
+func TestTempDirWithRelativeTMPDIR(t *testing.T) {
+	t.Chdir(TempDir(t))
+	t.Setenv("TMPDIR", ".")
+	t.Run("trusted fixture", func(t *testing.T) {
+		dir := TempDir(t)
+		if _, err := safepath.Capture(dir); err != nil {
+			t.Fatalf("fixture directory %q is unusable: %v", dir, err)
+		}
+	})
+}
 
 func TestIsolateKeepsFixtureGitConfigLocal(t *testing.T) {
 	callerConfig := filepath.Join(t.TempDir(), "caller.config")

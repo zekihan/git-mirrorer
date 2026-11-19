@@ -12,7 +12,16 @@ import (
 
 func TempDir(t *testing.T) string {
 	t.Helper()
-	dir, err := filepath.EvalSymlinks(t.TempDir())
+	dir := t.TempDir()
+	if !filepath.IsAbs(dir) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Preserve parent components until symlinks have been resolved.
+		dir = cwd + string(filepath.Separator) + dir
+	}
+	dir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
