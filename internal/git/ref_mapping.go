@@ -53,11 +53,13 @@ func ValidateRefMappings(mappings []RefMapping) error {
 const mappedRefLimit = 100_000
 const mappedRefBytes = 32 * 1024 * 1024
 
+var errMappedRefSize = errors.New("mapped ref inventory exceeds 32 MiB")
+
 type refBuffer struct{ bytes.Buffer }
 
 func (b *refBuffer) Write(p []byte) (int, error) {
 	if len(p) > mappedRefBytes-b.Len() {
-		return 0, errors.New("mapped ref inventory exceeds 32 MiB")
+		return 0, errMappedRefSize
 	}
 	return b.Buffer.Write(p)
 }
@@ -78,17 +80,26 @@ func (c *Client) pushMapped(ctx context.Context, path, destination string, atomi
 		return Changes{}, errors.New("mapped ref inventory exceeds 100000 refs")
 	}
 	seen := make(map[string]bool, len(lines))
+	mappedBytes := 0
 	for i, line := range lines {
 		oid, ref, ok := strings.Cut(line, " ")
 		if !ok || !strings.HasPrefix(ref, "refs/") {
 			return Changes{}, errors.New("invalid ref inventory")
 		}
+		prefix, suffix := "", ref
 		for _, m := range mappings {
-			if strings.HasPrefix(ref, m.From) {
-				ref = m.To + strings.TrimPrefix(ref, m.From)
+			if rest, ok := strings.CutPrefix(ref, m.From); ok {
+				prefix, suffix = m.To, rest
 				break
 			}
 		}
+		// Account for the rewritten line, including its separator and newline,
+		// before allocating the expanded ref or constructing the temporary view.
+		mappedBytes += len(oid) + len(prefix) + len(suffix) + 2
+		if mappedBytes > mappedRefBytes {
+			return Changes{}, errMappedRefSize
+		}
+		ref = prefix + suffix
 		if seen[ref] {
 			return Changes{}, errors.New("refMappings collide with another source ref")
 		}

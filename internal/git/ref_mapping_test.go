@@ -1,6 +1,7 @@
 package git
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -178,6 +179,52 @@ func TestMappedMirrorIgnoresInheritedRefFormat(t *testing.T) {
 	}
 	if testutil.Refs(t, dest) != before {
 		t.Fatal("inherited ref format changed destination")
+	}
+}
+
+func TestMappedMirrorRejectsOversizedViewBeforeInit(t *testing.T) {
+	testutil.Isolate(t)
+	source, dest := testutil.Repository(t, false), testutil.Repository(t, true)
+	oid := testutil.Commit(t, source, "a", "one")
+	client := newClient(t)
+	cache := filepath.Join(testutil.TempDir(t), "mirror.git")
+	if err := client.Clone(t.Context(), source, cache); err != nil {
+		t.Fatal(err)
+	}
+
+	// Fit within the source inventory limit while exceeding it after relocation.
+	targetPrefix := "refs/" + strings.Repeat(strings.Repeat("a", 200)+"/", 5)
+	refBytes := len(oid + " " + targetPrefix + "00000/head\n")
+	var packed strings.Builder
+	packed.WriteString("# pack-refs with: sorted\n")
+	fmt.Fprintf(&packed, "%s refs/heads/main\n", oid)
+	for i := range mappedRefBytes/refBytes + 1 {
+		fmt.Fprintf(&packed, "%s refs/pull/%05d/head\n", oid, i)
+	}
+	if err := os.WriteFile(filepath.Join(cache, "packed-refs"), []byte(packed.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	wrapper := filepath.Join(testutil.TempDir(t), "git-wrapper")
+	if err := os.WriteFile(wrapper, []byte(`#!/bin/sh
+for arg in "$@"; do
+    if [ "$arg" = init ]; then
+        echo "initialized oversized mapped ref view" >&2
+        exit 1
+    fi
+done
+exec "$REAL_GIT" "$@"
+`), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	client.runner.Env = append(client.runner.Env, "REAL_GIT="+client.runner.Executable)
+	client.runner.Executable = wrapper
+	_, err := client.Push(t.Context(), cache, dest, true, RefMapping{From: "refs/pull/", To: targetPrefix})
+	if err == nil || !strings.Contains(err.Error(), "mapped ref inventory exceeds 32 MiB") {
+		t.Fatalf("oversized mapped refs were not rejected before init: %v", err)
+	}
+	if got := testutil.Refs(t, dest); got != "" {
+		t.Fatalf("oversized mapped view wrote destination refs: %s", got)
 	}
 }
 
