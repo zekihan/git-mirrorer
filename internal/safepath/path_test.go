@@ -64,6 +64,27 @@ func TestNamespacePolicy(t *testing.T) {
 	}
 }
 
+func TestCaptureFilesystemRootUsesLeafPolicy(t *testing.T) {
+	path := string(filepath.Separator)
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := Capture(path)
+	if want := Trusted(info, false); want != nil {
+		if err == nil || err.Error() != want.Error() {
+			t.Fatalf("Capture(%q) error = %v, want %v", path, err, want)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.identities) != 1 || !os.SameFile(snapshot.identities[0], info) {
+		t.Fatal("expected a snapshot containing just the filesystem root")
+	}
+}
+
 type ownerInfo struct {
 	os.FileInfo
 	stat syscall.Stat_t
