@@ -57,16 +57,16 @@ var walkTree = cachefs.Walk
 // scan streams directory batches instead of WalkDir's unbounded sorted listing.
 // The cache is private to the service account; local concurrent hostile writers
 // are outside its trust model. Links and special files are always rejected.
-func scan(ctx context.Context, path string, limit usage) (usage, error) {
+func scan(ctx context.Context, root string, limit usage) (usage, error) {
 	var used usage
 	packs := make(map[packIdentity]struct{})
-	entries, err := walkTree(ctx, path, limit.entries, func(path string, info os.FileInfo) error {
+	entries, err := walkTree(ctx, root, limit.entries, func(path string, info os.FileInfo) error {
 		if info.Mode().IsRegular() {
 			if info.Size() > limit.bytes-used.bytes {
 				return errors.New("cache byte budget exceeded")
 			}
 			used.bytes += info.Size()
-			objects, err := objectCount(path, info, packs)
+			objects, err := objectCount(root, path, info, packs)
 			if err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err
 			}
@@ -81,12 +81,22 @@ func scan(ctx context.Context, path string, limit usage) (usage, error) {
 	return used, err
 }
 
-func objectCount(path string, info os.FileInfo, packs map[packIdentity]struct{}) (int64, error) {
+func objectCount(root, path string, info os.FileInfo, packs map[packIdentity]struct{}) (int64, error) {
 	parent := filepath.Dir(path)
+	objects := filepath.Dir(parent)
+	if filepath.Base(objects) != "objects" {
+		return 0, nil
+	}
+	// Scan roots are either repositories/ or one entry (including a temporary
+	// clone). Ref paths can contain directories named objects/pack too.
+	repo := filepath.Dir(objects)
+	entry := filepath.Dir(repo)
+	if filepath.Base(repo) != repositoryDirName || (root != entry && root != filepath.Dir(entry)) {
+		return 0, nil
+	}
 	name := filepath.Base(path)
 	// index-pack writes incoming packs as tmp_pack_* until verification finishes.
-	if filepath.Base(parent) == "pack" && filepath.Base(filepath.Dir(parent)) == "objects" &&
-		(strings.HasSuffix(name, ".pack") || strings.HasPrefix(name, "tmp_pack_")) {
+	if filepath.Base(parent) == "pack" && (strings.HasSuffix(name, ".pack") || strings.HasPrefix(name, "tmp_pack_")) {
 		// Git can link the final name before unlinking the temporary name.
 		id := packIdentity{directory: parent, inode: info.Sys().(*syscall.Stat_t).Ino}
 		if _, counted := packs[id]; counted {
@@ -111,7 +121,7 @@ func objectCount(path string, info os.FileInfo, packs map[packIdentity]struct{})
 		packs[id] = struct{}{}
 		return int64(binary.BigEndian.Uint32(header[8:])), nil
 	}
-	if filepath.Base(filepath.Dir(parent)) == "objects" && len(filepath.Base(parent)) == 2 && (len(name) == 38 || len(name) == 62) {
+	if len(filepath.Base(parent)) == 2 && (len(name) == 38 || len(name) == 62) {
 		return 1, nil
 	}
 	return 0, nil

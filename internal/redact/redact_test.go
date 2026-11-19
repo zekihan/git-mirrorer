@@ -18,6 +18,20 @@ func TestDiagnosticCredentials(t *testing.T) {
 	}
 }
 
+func TestHTTPURLSuffixRedactionKeepsSchemeCase(t *testing.T) {
+	for _, scheme := range []string{"http", "https", "HTTP", "HtTpS"} {
+		t.Run(scheme, func(t *testing.T) {
+			address := scheme + "://example.invalid/repo"
+			want := "GET " + address + "?[redacted] failed"
+			for _, suffix := range []string{"?view=summary", "#history"} {
+				if got := Text("GET " + address + suffix + " failed"); got != want {
+					t.Errorf("Text with URL suffix %q = %q, want %q", suffix, got, want)
+				}
+			}
+		})
+	}
+}
+
 func TestQuotedDiagnosticCredentials(t *testing.T) {
 	for _, input := range []string{
 		`remote: {"token":"SUPERSECRET SECONDSECRET", "error":"denied"}`,

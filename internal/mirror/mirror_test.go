@@ -430,6 +430,40 @@ func TestHighCardinalityCacheDoesNotStopHealthySource(t *testing.T) {
 	testutil.EqualRefs(t, healthy, backup)
 }
 
+func TestRefreshMirrorsLooseRefsWithObjectLikePaths(t *testing.T) {
+	for _, branch := range []string{"objects/pack/release.pack", "objects/ab/" + strings.Repeat("c", 38)} {
+		t.Run(branch, func(t *testing.T) {
+			testutil.Isolate(t)
+			t.Setenv("GIT_DEFAULT_REF_FORMAT", "files")
+			t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(testutil.TempDir(t), "gitconfig"))
+			testutil.Git(t, "", "config", "--global", "gc.packRefs", "false")
+
+			source, dest := testutil.Repository(t, false), testutil.Repository(t, true)
+			testutil.Commit(t, source, "data", "snapshot")
+			cfg := configured(t, source, dest)
+			cfg.Cache = cache.DefaultLimits()
+			cfg.Cache.SourceObjects = 3 // One commit, one tree, and one blob.
+			cfg.Cache.TotalObjects = 3
+			runner := realRunner(t, cfg)
+			if result := runner.Run(t.Context()); result.Outcome != Succeeded {
+				t.Fatalf("initial mirror: %+v", result.Sources[0].Error)
+			}
+			testutil.EqualRefs(t, source, dest)
+
+			testutil.Git(t, source, "branch", branch)
+			result := runner.Run(t.Context())
+			if result.Outcome != Succeeded {
+				t.Fatalf("ref-only refresh: %+v", result.Sources[0].Error)
+			}
+			testutil.EqualRefs(t, source, dest)
+			ref := filepath.Join(cfg.StateDir, "repositories", cache.Key(source), "repo.git", "refs", "heads", branch)
+			if _, err := os.Stat(ref); err != nil {
+				t.Fatalf("expected a loose cached ref: %v", err)
+			}
+		})
+	}
+}
+
 func TestReclaimsDisjointGitAndLFSSnapshotsUnderLease(t *testing.T) {
 	if _, err := exec.LookPath("git-lfs"); err != nil {
 		t.Skip("Git LFS is not installed")
