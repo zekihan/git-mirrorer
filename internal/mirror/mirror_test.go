@@ -61,6 +61,33 @@ func TestPartialFailureAndStaleCache(t *testing.T) {
 	}
 }
 
+func TestEmptySnapshotPrunesRefsVisibleToReceivePack(t *testing.T) {
+	testutil.Isolate(t)
+	source, dest := testutil.Repository(t, true), testutil.Repository(t, true)
+	ref := "refs/tags/stale"
+	object := testutil.Git(t, dest, "hash-object", "-w", "--stdin")
+	testutil.Git(t, dest, "update-ref", ref, object)
+	testutil.Git(t, dest, "config", "uploadpack.hideRefs", ref)
+	if refs := testutil.Git(t, source, "ls-remote", "--refs", dest); refs != "" {
+		t.Fatalf("upload-pack advertised stale ref: %s", refs)
+	}
+
+	runner := realRunner(t, configured(t, source, dest))
+	result := runner.Run(t.Context())
+	if result.Outcome != Succeeded {
+		t.Fatalf("mirror did not succeed: %+v, destination: %+v", result, result.Sources[0].Destinations[0].Error)
+	}
+	testutil.EqualRefs(t, source, dest)
+	if deleted := result.Sources[0].Destinations[0].Changes.Deleted; deleted != 1 {
+		t.Fatalf("deleted refs = %d, want 1", deleted)
+	}
+
+	result = runner.Run(t.Context())
+	if result.Outcome != Succeeded || result.Sources[0].Destinations[0].Changes != (git.Changes{}) {
+		t.Fatalf("empty-to-empty mirror: %+v, destination: %+v", result, result.Sources[0].Destinations[0].Error)
+	}
+}
+
 type observedBackend struct {
 	Backend
 	prepareCount   int
