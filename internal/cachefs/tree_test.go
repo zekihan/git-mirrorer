@@ -136,6 +136,28 @@ func TestCleanupStopsAtEntryBudgetAndDeadline(t *testing.T) {
 	}
 }
 
+func TestWalkStopsBeforeVisitingEntryAfterCancellation(t *testing.T) {
+	root := testutil.TempDir(t)
+	target := filepath.Join(root, "payload")
+	if err := os.WriteFile(target, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	_, err := walk(ctx, root, 10, func(path string, _ os.FileInfo) error {
+		return os.Remove(path)
+	}, func(string) error {
+		cancel()
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("walk returned %v, want context cancellation", err)
+	}
+	if got, err := os.ReadFile(target); err != nil || string(got) != "keep" {
+		t.Fatalf("walk called the removal visitor after cancellation: %q, %v", got, err)
+	}
+}
+
 func TestCleanupNeverFollowsSymlinkAndWalkLimitsDepth(t *testing.T) {
 	outside, root := testutil.TempDir(t), testutil.TempDir(t)
 	target := filepath.Join(outside, "required")

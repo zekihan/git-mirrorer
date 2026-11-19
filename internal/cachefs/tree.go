@@ -131,13 +131,16 @@ func walk(ctx context.Context, path string, maxEntries int64, visit func(string,
 					info = opened
 				}
 				if visit != nil {
+					if err := ctx.Err(); err != nil {
+						return err
+					}
 					if err := visit(child, info); err != nil {
 						return err
 					}
 				}
 			}
 			if errors.Is(readErr, io.EOF) {
-				return nil
+				return ctx.Err()
 			}
 			if readErr != nil {
 				return readErr
@@ -156,6 +159,9 @@ func RemoveTree(ctx context.Context, path string, maxEntries int64) error {
 		return nil
 	}
 	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	return os.Remove(path)
