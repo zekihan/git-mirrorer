@@ -47,6 +47,11 @@ func (l Limits) Validate() error {
 
 type usage struct{ bytes, entries, objects int64 }
 
+type packIdentity struct {
+	directory string
+	inode     uint64
+}
+
 var walkTree = cachefs.Walk
 
 // scan streams directory batches instead of WalkDir's unbounded sorted listing.
@@ -54,13 +59,14 @@ var walkTree = cachefs.Walk
 // are outside its trust model. Links and special files are always rejected.
 func scan(ctx context.Context, path string, limit usage) (usage, error) {
 	var used usage
+	packs := make(map[packIdentity]struct{})
 	entries, err := walkTree(ctx, path, limit.entries, func(path string, info os.FileInfo) error {
 		if info.Mode().IsRegular() {
 			if info.Size() > limit.bytes-used.bytes {
 				return errors.New("cache byte budget exceeded")
 			}
 			used.bytes += info.Size()
-			objects, err := objectCount(path)
+			objects, err := objectCount(path, info, packs)
 			if err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err
 			}
@@ -75,9 +81,17 @@ func scan(ctx context.Context, path string, limit usage) (usage, error) {
 	return used, err
 }
 
-func objectCount(path string) (int64, error) {
+func objectCount(path string, info os.FileInfo, packs map[packIdentity]struct{}) (int64, error) {
 	parent := filepath.Dir(path)
-	if filepath.Base(parent) == "pack" && filepath.Base(filepath.Dir(parent)) == "objects" && strings.HasSuffix(path, ".pack") {
+	name := filepath.Base(path)
+	// index-pack writes incoming packs as tmp_pack_* until verification finishes.
+	if filepath.Base(parent) == "pack" && filepath.Base(filepath.Dir(parent)) == "objects" &&
+		(strings.HasSuffix(name, ".pack") || strings.HasPrefix(name, "tmp_pack_")) {
+		// Git can link the final name before unlinking the temporary name.
+		id := packIdentity{directory: parent, inode: info.Sys().(*syscall.Stat_t).Ino}
+		if _, counted := packs[id]; counted {
+			return 0, nil
+		}
 		fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
 		if err != nil {
 			return 0, err
@@ -94,9 +108,10 @@ func objectCount(path string) (int64, error) {
 		if string(header[:4]) != "PACK" {
 			return 0, errors.New("invalid Git pack header")
 		}
+		packs[id] = struct{}{}
 		return int64(binary.BigEndian.Uint32(header[8:])), nil
 	}
-	if filepath.Base(filepath.Dir(parent)) == "objects" && len(filepath.Base(parent)) == 2 && (len(filepath.Base(path)) == 38 || len(filepath.Base(path)) == 62) {
+	if filepath.Base(filepath.Dir(parent)) == "objects" && len(filepath.Base(parent)) == 2 && (len(name) == 38 || len(name) == 62) {
 		return 1, nil
 	}
 	return 0, nil

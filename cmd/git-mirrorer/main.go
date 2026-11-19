@@ -31,6 +31,10 @@ func main() { os.Exit(mainWithSignals()) }
 func mainWithSignals() int {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(nil)
+	// Let writes to a closed report pipe return EPIPE without terminating the CLI.
+	brokenPipe := make(chan os.Signal, 1)
+	signal.Notify(brokenPipe, syscall.SIGPIPE)
+	defer signal.Stop(brokenPipe)
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)

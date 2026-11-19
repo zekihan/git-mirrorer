@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -128,6 +129,35 @@ func TestCLIHelper(t *testing.T) {
 	}
 	os.Args = []string{"git-mirrorer", "--config", os.Getenv("MIRROR_CONFIG"), "--format", "json"}
 	os.Exit(mainWithSignals())
+}
+
+func TestCLIClosedReportPipeExitsWithError(t *testing.T) {
+	testutil.Isolate(t)
+	source, dest := testutil.Repository(t, false), testutil.Repository(t, true)
+	testutil.Commit(t, source, "fixture", "one")
+	filename, _ := writeConfig(t, source, dest)
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(t.Context(), executable, "-test.run=^TestCLIHelper$")
+	cmd.Env = append(os.Environ(), "MIRROR_CLI_HELPER=1", "MIRROR_CONFIG="+filename)
+	var stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = writer, &stderr
+	err = cmd.Run()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 || !strings.Contains(stderr.String(), "write report:") {
+		t.Fatalf("closed report pipe: %v\nstderr:\n%s", err, &stderr)
+	}
+	testutil.EqualRefs(t, source, dest)
 }
 
 func TestSignalExitCodesAndCloneCleanup(t *testing.T) {
