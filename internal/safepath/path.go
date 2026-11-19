@@ -71,7 +71,7 @@ func walk(path string, create, missingOK bool) (*os.Root, []os.FileInfo, error) 
 	}
 	fail := func(err error) (*os.Root, []os.FileInfo, error) { _ = root.Close(); return nil, nil, err }
 	var identities []os.FileInfo
-	components := strings.Split(strings.TrimPrefix(path, string(filepath.Separator)), string(filepath.Separator))
+	components := strings.FieldsFunc(path, func(r rune) bool { return r == filepath.Separator })
 	for i := 0; ; i++ {
 		file, err := root.Open(".")
 		if err != nil {
