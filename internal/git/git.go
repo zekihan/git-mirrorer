@@ -306,5 +306,7 @@ func (c *Client) Reclaim(ctx context.Context, path string) error {
 	if err := c.command(ctx, path, nil, nil, "reflog", "expire", "--expire=now", "--all"); err != nil {
 		return err
 	}
-	return c.command(ctx, path, nil, nil, "-c", "pack.threads=1", "-c", "pack.windowMemory=64m", "-c", "gc.cruftPacks=false", "-c", "gc.autoDetach=false", "-c", "gc.detach=false", "gc", "--prune=now")
+	// The source lease excludes other writers. Git's gc.pid can outlive an
+	// interrupted process group and name a host from a previous run.
+	return c.command(ctx, path, nil, nil, "-c", "pack.threads=1", "-c", "pack.windowMemory=64m", "-c", "gc.cruftPacks=false", "-c", "gc.autoDetach=false", "-c", "gc.detach=false", "gc", "--force", "--prune=now")
 }

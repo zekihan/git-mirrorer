@@ -363,6 +363,42 @@ func TestCacheLockConflictAndInvalidCache(t *testing.T) {
 	}
 }
 
+func TestRefreshReclaimsCacheAfterInterruptedGC(t *testing.T) {
+	testutil.Isolate(t)
+	source, dest := testutil.Repository(t, true), testutil.Repository(t, true)
+	tree := testutil.Git(t, source, "mktree")
+	first := testutil.Git(t, source, "commit-tree", tree, "-m", "Old snapshot")
+	testutil.Git(t, source, "update-ref", "refs/heads/main", first)
+	cfg := configured(t, source, dest)
+	runner := realRunner(t, cfg)
+	if result := runner.Run(t.Context()); result.Outcome != Succeeded {
+		t.Fatalf("initial mirror: %+v", result)
+	}
+
+	repoPath := filepath.Join(cfg.StateDir, "repositories", cache.Key(source), "repo.git")
+	// An interrupted foreground gc can leave a fresh marker in the cache
+	// with the hostname of a previous invocation's container.
+	if err := os.WriteFile(filepath.Join(repoPath, "gc.pid"), []byte("1 mirror-previous-host.invalid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	next := testutil.Git(t, source, "commit-tree", tree, "-m", "Replacement snapshot")
+	testutil.Git(t, source, "update-ref", "refs/heads/main", next)
+
+	result := runner.Run(t.Context())
+	if result.Outcome != Succeeded {
+		t.Fatalf("refresh after interrupted gc: %+v, source error: %+v", result, result.Sources[0].Error)
+	}
+	testutil.EqualRefs(t, source, dest)
+	if _, err := os.Lstat(filepath.Join(repoPath, "gc.pid")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("gc left its PID marker: %v", err)
+	}
+	cmd := exec.CommandContext(t.Context(), "git", "cat-file", "-t", first)
+	cmd.Dir = repoPath
+	if err := cmd.Run(); err == nil {
+		t.Fatal("reclamation retained the old snapshot")
+	}
+}
+
 func TestHighCardinalityCacheDoesNotStopHealthySource(t *testing.T) {
 	testutil.Isolate(t)
 	source, dest := testutil.Repository(t, false), testutil.Repository(t, true)
