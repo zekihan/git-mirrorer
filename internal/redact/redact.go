@@ -4,7 +4,7 @@ import "regexp"
 
 var (
 	userinfo = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^\s/@]+@`)
-	query    = regexp.MustCompile(`(https?://[^\s?#]+)[?#][^\s]*`)
+	query    = regexp.MustCompile(`(?i)(https?://[^\s?#]+)[?#][^\s]*`)
 	// Consume whole quoted values, including escaped quotes and whitespace.
 	// The optional closing quote also covers a diagnostic cut off mid-value.
 	secret     = regexp.MustCompile(`(?i)((?:authorization|password|token|secret)["']?\s*[=:]\s*)(?:(")(?:\\[\s\S]|[^"\\])*"?|(')(?:\\[\s\S]|[^'\\])*'?|[^\s]+)`)
