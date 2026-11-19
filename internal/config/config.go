@@ -52,10 +52,7 @@ func Load(filename string) (Config, error) {
 		return Config{}, fmt.Errorf("open configuration: %w", err)
 	}
 	defer file.Close()
-	base, err := filepath.Abs(filepath.Dir(filename))
-	if err != nil {
-		return Config{}, fmt.Errorf("resolve configuration directory: %w", err)
-	}
+	base, _ := filepath.Split(filename)
 	return Decode(file, base)
 }
 
@@ -286,16 +283,21 @@ func Address(base, value string) (string, bool, error) {
 
 // Resolve existing ancestors as well, so a not-yet-created child of a symlink is normalized.
 func resolvePath(base, value string) (string, error) {
-	if !filepath.IsAbs(value) {
-		value = filepath.Join(base, value)
+	const separator = string(filepath.Separator)
+	// Follow symlinks before cleaning any parent-directory components.
+	if base != "" && !filepath.IsAbs(value) {
+		value = base + separator + value
 	}
-	value, err := filepath.Abs(value)
-	if err != nil {
-		return "", err
+	if !filepath.IsAbs(value) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+		value = cwd + separator + value
 	}
 	ancestor := value
 	var suffix []string
-	for {
+	for ancestor != "" {
 		resolved, err := filepath.EvalSymlinks(ancestor)
 		if err == nil {
 			for i := len(suffix) - 1; i >= 0; i-- {
@@ -303,10 +305,16 @@ func resolvePath(base, value string) (string, error) {
 			}
 			return resolved, nil
 		}
-		if !errors.Is(err, os.ErrNotExist) || ancestor == filepath.Dir(ancestor) {
-			return "", errors.New("cannot resolve filesystem path")
+		if !errors.Is(err, os.ErrNotExist) {
+			break
 		}
-		suffix = append(suffix, filepath.Base(ancestor))
-		ancestor = filepath.Dir(ancestor)
+		parent, name := filepath.Split(strings.TrimRight(ancestor, separator))
+		if name == ".." {
+			// A missing prefix cannot be traversed to reach its parent.
+			break
+		}
+		suffix = append(suffix, name)
+		ancestor = parent
 	}
+	return "", errors.New("cannot resolve filesystem path")
 }
