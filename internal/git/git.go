@@ -61,7 +61,7 @@ func (c *Client) Clone(ctx context.Context, source, path string) error {
 
 func (c *Client) Validate(ctx context.Context, path, source string) error {
 	var output bytes.Buffer
-	err := c.command(ctx, path, nil, &output, "config", "--local", "--no-includes", "--name-only", "--get-regexp", `^(credential\..*|include.*|core\.(sshcommand|gitproxy|fsmonitor)|filter\..*|remote\..*\.(uploadpack|receivepack|vcs)|url\..*|alias\..*)$`)
+	err := c.command(ctx, path, nil, &output, "config", "--local", "--no-includes", "--name-only", "--get-regexp", `^(credential\..*|include.*|core\.(askpass|sshcommand|gitproxy|fsmonitor)|filter\..*|remote\..*\.(uploadpack|receivepack|vcs)|url\..*|alias\..*)$`)
 	var unsafeErr *CommandError
 	if err == nil || output.Len() > 0 {
 		return errors.New("executable or redirecting repository-local configuration is unsupported")

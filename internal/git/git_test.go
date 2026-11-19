@@ -21,6 +21,28 @@ func newClient(t *testing.T) *Client {
 	return c
 }
 
+func TestValidateRejectsRepositoryLocalAskPass(t *testing.T) {
+	testutil.Isolate(t)
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(testutil.TempDir(t), "gitconfig"))
+	program := filepath.Join(testutil.TempDir(t), "askpass")
+	testutil.Git(t, "", "config", "--global", "core.askPass", program)
+
+	source := testutil.Repository(t, false)
+	testutil.Commit(t, source, "a", "one")
+	cache := filepath.Join(testutil.TempDir(t), "mirror.git")
+	client := newClient(t)
+	if err := client.Clone(t.Context(), source, cache); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Validate(t.Context(), cache, source); err != nil {
+		t.Fatalf("rejected trusted global askpass configuration: %v", err)
+	}
+	testutil.Git(t, cache, "config", "--local", "core.askPass", program)
+	if err := client.Validate(t.Context(), cache, source); err == nil || !strings.Contains(err.Error(), "repository-local configuration") {
+		t.Fatalf("repository-local askpass was not rejected: %v", err)
+	}
+}
+
 func TestExactMirror(t *testing.T) {
 	testutil.Isolate(t)
 	source, dest := testutil.Repository(t, false), testutil.Repository(t, true)
