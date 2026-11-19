@@ -8,31 +8,32 @@ import yaml
 SHA = re.compile(r"[^\s@]+/[^\s@]+@[0-9a-f]{40}\Z")
 
 
+def check_uses(node, errors):
+    if 'uses' not in node:
+        return
+    ref = node['uses']
+    if not isinstance(ref, str) or (not ref.startswith('./') and not SHA.fullmatch(ref)):
+        errors.append('external uses must be pinned to a full commit SHA')
+
+
 def validate(doc):
-    errors = []
-    def walk(value):
-        if isinstance(value, dict):
-            for key, child in value.items():
-                if key == 'uses' and (not isinstance(child, str) or
-                        (not child.startswith('./') and not SHA.fullmatch(child))):
-                    errors.append('external uses must be pinned to a full commit SHA')
-                walk(child)
-        elif isinstance(value, list):
-            for child in value:
-                walk(child)
-    walk(doc)
     if not isinstance(doc, dict) or not isinstance(doc.get('jobs'), dict):
-        return errors + ['workflow must contain jobs']
+        return ['workflow must contain jobs']
+    errors = []
     if any('secrets.' in str(v) for v in doc.get('env', {}).values()):
         errors.append('workflow env must not expose secrets')
     permissions = doc.get('permissions')
     if not isinstance(permissions, dict) or any(v != 'read' for v in permissions.values()):
         errors.append('workflow permissions must be explicitly read-only; scope writes to jobs')
     for name, job in doc['jobs'].items():
+        check_uses(job, errors)
         if any('secrets.' in str(v) for v in job.get('env', {}).values()):
             errors.append(f'{name}: job env must not expose secrets')
         for step in job.get('steps', []):
-            if step.get('uses', '').startswith('actions/checkout@') and step.get('with', {}).get('persist-credentials') is not False:
+            check_uses(step, errors)
+            ref = step.get('uses')
+            if (isinstance(ref, str) and ref.startswith('actions/checkout@')
+                    and step.get('with', {}).get('persist-credentials') is not False):
                 errors.append(f'{name}: checkout must disable credential persistence')
             if name in ('checks', 'test', 'container') and 'secrets.' in str(step):
                 errors.append(f'{name}: validation must not receive secrets')

@@ -24,6 +24,27 @@ class PolicyTests(unittest.TestCase):
         self.good['jobs']['checks'] = {'uses': './.github/workflows/pr.yaml'}
         self.assertEqual([], validate(self.good))
 
+    def test_workflow_input_named_uses_is_not_an_action_reference(self):
+        doc = yaml.safe_load("""
+'on':
+  workflow_dispatch:
+    inputs:
+      uses:
+        description: Binary to check
+        type: string
+        default: git
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          TOOL: ${{ inputs.uses }}
+        run: command -v "$TOOL"
+""")
+        self.assertEqual([], validate(doc))
+
     def test_mutable_and_malformed_refs(self):
         for ref in ['owner/action@v1.2.3', 'owner/action@main', 'owner/action@' + 'a'*39,
                     'owner/action@' + 'z'*40, 'docker://alpine:latest', '${{ inputs.action }}']:
@@ -31,6 +52,14 @@ class PolicyTests(unittest.TestCase):
                 doc = copy.deepcopy(self.good)
                 doc['jobs']['publish']['steps'][1]['uses'] = ref
                 self.assertTrue(validate(doc))
+
+    def test_non_string_step_uses_returns_policy_error(self):
+        for ref in (None, False, ['owner/action']):
+            with self.subTest(ref=ref):
+                doc = copy.deepcopy(self.good)
+                doc['jobs']['publish']['steps'][1]['uses'] = ref
+                self.assertEqual(['external uses must be pinned to a full commit SHA'],
+                                 validate(doc))
 
     def test_reusable_external_workflow_requires_sha(self):
         self.good['jobs']['checks'] = {'uses': 'owner/repo/.github/workflows/test.yml@main'}
