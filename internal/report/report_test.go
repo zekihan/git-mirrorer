@@ -59,6 +59,41 @@ func TestUntrustedDetailsStayInOneTextRecord(t *testing.T) {
 	}
 }
 
+func TestLabelsStayInOneTextRecord(t *testing.T) {
+	const source = "primary\u2028mirror"
+	const destination = "réplica\u2029east\u202e2"
+	value := mirror.Report{
+		Outcome: mirror.Failed,
+		Totals:  mirror.Totals{Sources: 1, Destinations: 1, Skipped: 1, Unsuccessful: 1},
+		Sources: []mirror.SourceResult{{
+			Name: source, Outcome: mirror.Failed, Error: &mirror.Failure{Code: "fetch", Detail: "unreachable"},
+			Destinations: []mirror.DestinationResult{{Name: destination, Outcome: mirror.Skipped}},
+		}},
+	}
+
+	var buffer bytes.Buffer
+	if err := Write(&buffer, "text", value); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSuffix(buffer.String(), "\n"), "\n")
+	if len(lines) != 3 || lines[0] != `primary\u2028mirror: failed (fetch: unreachable)` ||
+		!strings.HasPrefix(lines[1], `primary\u2028mirror -> réplica\u2029east\u202e2: skipped `) {
+		t.Fatalf("expected escaped labels in both text records, got %q", buffer.String())
+	}
+
+	buffer.Reset()
+	if err := Write(&buffer, "json", value); err != nil {
+		t.Fatal(err)
+	}
+	var decoded mirror.Report
+	if err := json.Unmarshal(buffer.Bytes(), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Sources[0].Name != source || decoded.Sources[0].Destinations[0].Name != destination {
+		t.Fatalf("JSON altered labels: %q", buffer.String())
+	}
+}
+
 func TestJSONPreservesStructuredDiagnostic(t *testing.T) {
 	detail := "multiline\n\r\x1b[2J\x1b]0;title\a\x00\x7f\u0085\u202e"
 	value := mirror.Report{Error: &mirror.Failure{Detail: detail}}
