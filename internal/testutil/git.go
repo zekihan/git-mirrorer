@@ -52,7 +52,7 @@ func Isolate(t *testing.T) {
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_COUNT", "0")
 	t.Setenv("GIT_CONFIG_PARAMETERS", "")
-	for _, name := range []string{"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_INDEX_FILE", "GIT_SSH_COMMAND", "GIT_SSH"} {
+	for _, name := range []string{"GIT_CONFIG", "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_INDEX_FILE", "GIT_SSH_COMMAND", "GIT_SSH"} {
 		t.Setenv(name, "")
 		if err := os.Unsetenv(name); err != nil {
 			t.Fatal(err)
@@ -79,8 +79,8 @@ func Repository(t *testing.T, bare bool) string {
 		args = append(args, "--bare")
 	}
 	Git(t, dir, args...)
-	Git(t, dir, "config", "user.name", "Mirror Test")
-	Git(t, dir, "config", "user.email", "mirror@example.invalid")
+	Git(t, "", "-C", dir, "config", "--local", "user.name", "Mirror Test")
+	Git(t, "", "-C", dir, "config", "--local", "user.email", "mirror@example.invalid")
 	return dir
 }
 
