@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/zekihan/git-mirrorer/internal/testutil"
@@ -232,6 +233,24 @@ func TestConnectRetryOutlastsStandardRetries(t *testing.T) {
 	if err != nil || calls != 12 {
 		t.Fatalf("calls=%d err=%v", calls, err)
 	}
+}
+
+func TestConnectRetryBudgetIncludesInitialAttempt(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := connectClient(5 * time.Second)
+		want := connectionError("ssh: Could not resolve hostname remote.invalid: Name or service not known")
+		calls := 0
+		err := c.retry(t.Context(), "git@remote.invalid:fixture.git", func(context.Context) error {
+			calls++
+			if calls == 1 {
+				time.Sleep(6 * time.Second)
+			}
+			return want
+		})
+		if calls != 1 || !errors.Is(err, want) {
+			t.Fatalf("calls=%d, want 1; err=%v", calls, err)
+		}
+	})
 }
 
 func TestConnectRetryIsBoundedAndShared(t *testing.T) {
