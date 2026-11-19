@@ -72,6 +72,51 @@ func TestLFSTransferAllSnapshotRefs(t *testing.T) {
 	}
 }
 
+func TestLFSTransfersLocalPathsWithURLDelimiters(t *testing.T) {
+	if _, err := exec.LookPath("git-lfs"); err != nil {
+		t.Skip("Git LFS is not installed")
+	}
+	testutil.Isolate(t)
+	for _, endpoint := range []string{"source", "destination"} {
+		t.Run(endpoint, func(t *testing.T) {
+			source, dest := testutil.Repository(t, false), testutil.Repository(t, true)
+			path := &source
+			if endpoint == "destination" {
+				path = &dest
+			}
+			special := filepath.Join(testutil.TempDir(t), "repository #tag %32 ?.git")
+			if err := os.Rename(*path, special); err != nil {
+				t.Fatal(err)
+			}
+			*path = special
+
+			const payload = "local LFS payload"
+			testutil.Git(t, source, "lfs", "install", "--local")
+			testutil.Commit(t, source, ".gitattributes", "*.bin filter=lfs diff=lfs merge=lfs -text\n")
+			testutil.Commit(t, source, "asset.bin", payload)
+			c := newClient(t)
+			cache := filepath.Join(testutil.TempDir(t), "mirror.git")
+			if err := c.Clone(t.Context(), source, cache); err != nil {
+				t.Fatal(err)
+			}
+			if err := c.LFSFetch(t.Context(), cache, source); err != nil {
+				t.Fatalf("fetch local LFS payload: %v", err)
+			}
+			if err := c.LFSPush(t.Context(), cache, dest); err != nil {
+				t.Fatalf("push local LFS payload: %v", err)
+			}
+			if _, err := c.Push(t.Context(), cache, dest, true); err != nil {
+				t.Fatal(err)
+			}
+			testutil.EqualRefs(t, source, dest)
+			oid := fmt.Sprintf("%x", sha256.Sum256([]byte(payload)))
+			if got, err := os.ReadFile(filepath.Join(dest, "lfs", "objects", oid[:2], oid[2:4], oid)); err != nil || string(got) != payload {
+				t.Fatalf("destination payload: %q %v", got, err)
+			}
+		})
+	}
+}
+
 func TestLFSEmptySource(t *testing.T) {
 	if _, err := exec.LookPath("git-lfs"); err != nil {
 		t.Skip("Git LFS is not installed")

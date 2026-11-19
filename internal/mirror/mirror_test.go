@@ -534,6 +534,46 @@ func TestReclaimsDisjointGitAndLFSSnapshotsUnderLease(t *testing.T) {
 	}
 }
 
+func TestLFSRefreshIgnoresDetachedCacheHEAD(t *testing.T) {
+	if _, err := exec.LookPath("git-lfs"); err != nil {
+		t.Skip("Git LFS is not installed")
+	}
+	testutil.Isolate(t)
+	source, dest := testutil.Repository(t, false), testutil.Repository(t, true)
+	testutil.Git(t, source, "lfs", "install", "--local")
+	testutil.Commit(t, source, ".gitattributes", "*.bin filter=lfs diff=lfs merge=lfs -text\n")
+	testutil.Git(t, source, "checkout", "--detach")
+	detachedPayload := "payload from detached HEAD"
+	detached := testutil.Commit(t, source, "asset.bin", detachedPayload)
+	cfg := configured(t, source, dest)
+	cfg.Repositories[0].LFS = true
+	runner := realRunner(t, cfg)
+	if result := runner.Run(t.Context()); result.Outcome != Succeeded {
+		t.Fatalf("initial mirror: source error=%+v destination error=%+v", result.Sources[0].Error, result.Sources[0].Destinations[0].Error)
+	}
+	testutil.EqualRefs(t, source, dest)
+	repoPath := filepath.Join(cfg.StateDir, "repositories", cache.Key(source), "repo.git")
+	if head := testutil.Git(t, repoPath, "rev-parse", "HEAD"); head != detached {
+		t.Fatalf("cached HEAD = %s, want detached commit %s", head, detached)
+	}
+
+	testutil.Git(t, source, "checkout", "main")
+	detachedOID := fmt.Sprintf("%x", sha256.Sum256([]byte(detachedPayload)))
+	if err := os.Remove(filepath.Join(source, ".git", "lfs", "objects", detachedOID[:2], detachedOID[2:4], detachedOID)); err != nil {
+		t.Fatal(err)
+	}
+	payload := "payload from the refreshed branch"
+	testutil.Commit(t, source, "asset.bin", payload)
+	if result := runner.Run(t.Context()); result.Outcome != Succeeded {
+		t.Fatalf("refreshed mirror: source error=%+v destination error=%+v", result.Sources[0].Error, result.Sources[0].Destinations[0].Error)
+	}
+	testutil.EqualRefs(t, source, dest)
+	oid := fmt.Sprintf("%x", sha256.Sum256([]byte(payload)))
+	if got, err := os.ReadFile(filepath.Join(dest, "lfs", "objects", oid[:2], oid[2:4], oid)); err != nil || string(got) != payload {
+		t.Fatalf("destination payload: %q %v", got, err)
+	}
+}
+
 func TestCacheBudgetFailureSkipsEveryDestination(t *testing.T) {
 	testutil.Isolate(t)
 	source, dest := testutil.Repository(t, false), testutil.Repository(t, true)

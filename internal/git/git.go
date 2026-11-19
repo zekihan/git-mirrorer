@@ -1,11 +1,13 @@
 package git
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -208,11 +210,54 @@ func (c *Client) LFSFetch(ctx context.Context, path, source string) error {
 	if err := c.prepareLFS(ctx, path); err != nil {
 		return err
 	}
-	return c.retry(ctx, source, func(ctx context.Context) error {
-		return c.command(ctx, path, nil, nil, "-c", "remote.mirrorer-lfs.url="+source,
-			"-c", "lfs.concurrenttransfers=1",
-			"-c", "lfs.skipdownloaderrors=false", "lfs", "fetch", "--all", "mirrorer-lfs")
+	args := []string{"-c", "remote.mirrorer-lfs.url=" + lfsAddress(source),
+		"-c", "lfs.concurrenttransfers=1",
+		"-c", "lfs.skipdownloaderrors=false", "lfs", "fetch", "--all", "mirrorer-lfs"}
+	err := c.command(ctx, path, nil, nil, "symbolic-ref", "--quiet", "HEAD")
+	if err == nil {
+		return c.retry(ctx, source, func(ctx context.Context) error {
+			return c.command(ctx, path, nil, nil, args...)
+		})
+	}
+	var commandErr *CommandError
+	if !errors.As(err, &commandErr) || commandErr.ExitCode != 1 {
+		return err
+	}
+	// An implicit --all scan includes detached HEAD, which may still point to
+	// the commit seen at clone time. Fetch only objects reachable from refs/.
+	return c.withLFSRefList(ctx, path, "%(objectname)", func(refs *os.File) error {
+		return c.retry(ctx, source, func(ctx context.Context) error {
+			return c.fetchLFSRefBatches(ctx, path, args, refs)
+		})
 	})
+}
+
+func (c *Client) fetchLFSRefBatches(ctx context.Context, path string, args []string, refs *os.File) error {
+	if _, err := refs.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	// LFS 3.7 does not support fetch --stdin. Use fixed-size batches of up to
+	// 512 object IDs (at most 33 KiB of argument strings for SHA-256).
+	const batchSize = 512
+	batch := make([]string, 0, len(args)+batchSize)
+	batch = append(batch, args...)
+	scanner := bufio.NewScanner(refs)
+	for scanner.Scan() {
+		batch = append(batch, scanner.Text())
+		if len(batch) == len(args)+batchSize {
+			if err := c.command(ctx, path, nil, nil, batch...); err != nil {
+				return err
+			}
+			batch = batch[:len(args)]
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	if len(batch) > len(args) {
+		return c.command(ctx, path, nil, nil, batch...)
+	}
+	return nil
 }
 
 func (c *Client) LFSPush(ctx context.Context, path, destination string) error {
@@ -222,6 +267,31 @@ func (c *Client) LFSPush(ctx context.Context, path, destination string) error {
 	if err := c.prepareLFS(ctx, path); err != nil {
 		return err
 	}
+	return c.withLFSRefList(ctx, path, "%(refname)", func(refs *os.File) error {
+		size, err := refs.Seek(0, io.SeekCurrent)
+		if err != nil || size == 0 {
+			return err
+		}
+		return c.retry(ctx, destination, func(ctx context.Context) error {
+			if _, err := refs.Seek(0, io.SeekStart); err != nil {
+				return err
+			}
+			return c.command(ctx, path, refs, nil, "-c", "remote.mirrorer-lfs.url="+lfsAddress(destination),
+				"-c", "lfs.concurrenttransfers=1",
+				"-c", "lfs.allowincompletepush=false", "lfs", "push", "--all", "mirrorer-lfs", "--stdin")
+		})
+	})
+}
+
+func lfsAddress(address string) string {
+	if !filepath.IsAbs(address) {
+		return address
+	}
+	// Git LFS parses local endpoints as URLs. Escape literal URL delimiters.
+	return (&url.URL{Scheme: "file", Path: address}).String()
+}
+
+func (c *Client) withLFSRefList(ctx context.Context, path, format string, transfer func(*os.File) error) error {
 	// A temporary ref list bounds memory and avoids platform argument-size limits.
 	refs, err := os.CreateTemp(filepath.Dir(path), ".lfs-refs-*")
 	if err != nil {
@@ -229,24 +299,10 @@ func (c *Client) LFSPush(ctx context.Context, path, destination string) error {
 	}
 	defer os.Remove(refs.Name())
 	defer refs.Close()
-	if err := c.command(ctx, path, nil, refs, "for-each-ref", "--format=%(refname)", "refs/"); err != nil {
+	if err := c.command(ctx, path, nil, refs, "for-each-ref", "--format="+format, "refs/"); err != nil {
 		return err
 	}
-	size, err := refs.Seek(0, io.SeekCurrent)
-	if err != nil {
-		return err
-	}
-	if size == 0 {
-		return nil
-	}
-	return c.retry(ctx, destination, func(ctx context.Context) error {
-		if _, err := refs.Seek(0, io.SeekStart); err != nil {
-			return err
-		}
-		return c.command(ctx, path, refs, nil, "-c", "remote.mirrorer-lfs.url="+destination,
-			"-c", "lfs.concurrenttransfers=1",
-			"-c", "lfs.allowincompletepush=false", "lfs", "push", "--all", "mirrorer-lfs", "--stdin")
-	})
+	return transfer(refs)
 }
 
 func (c *Client) prepareLFS(ctx context.Context, path string) error {
