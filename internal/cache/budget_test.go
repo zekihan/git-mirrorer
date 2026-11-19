@@ -21,20 +21,20 @@ func TestBudgetScanRetriesOnlyFileInstability(t *testing.T) {
 	for _, failures := range []int{0, 1, 2, 3} {
 		t.Run(fmt.Sprint(failures), func(t *testing.T) {
 			root := testutil.TempDir(t)
-			writeFixture(t, filepath.Join(root, "objects", "ab", strings.Repeat("c", 38)), []byte("payload"))
+			writeFixture(t, filepath.Join(root, repositoryDirName, "objects", "ab", strings.Repeat("c", 38)), []byte("payload"))
 			calls := 0
 			used, err := retryScan(t.Context(), func() (usage, error) {
 				calls++
 				if calls <= failures {
 					return usage{1000, 1000, 1000}, fmt.Errorf("wrapped: %w", cachefs.ErrFileChanged)
 				}
-				return scan(t.Context(), root, usage{7, 3, 1})
+				return scan(t.Context(), root, usage{7, 4, 1})
 			})
 			if failures == 3 {
 				if calls != 3 || !errors.Is(err, cachefs.ErrFileChanged) {
 					t.Fatalf("unbounded churn: calls=%d err=%v", calls, err)
 				}
-			} else if err != nil || calls != failures+1 || used != (usage{7, 3, 1}) {
+			} else if err != nil || calls != failures+1 || used != (usage{7, 4, 1}) {
 				t.Fatalf("accounting did not restart: calls=%d used=%+v err=%v", calls, used, err)
 			}
 		})
@@ -252,7 +252,7 @@ func TestBudgetCountsIncomingPackObjects(t *testing.T) {
 
 func TestBudgetCountsFinalizingPackOnce(t *testing.T) {
 	root := testutil.TempDir(t)
-	packDir := filepath.Join(root, "objects", "pack")
+	packDir := filepath.Join(root, repositoryDirName, "objects", "pack")
 	incoming := filepath.Join(packDir, "tmp_pack_ABC123")
 	writeFixture(t, incoming, packHeader(100))
 	// Git may link the final filename before unlinking the temporary name.
@@ -302,12 +302,12 @@ func TestStreamingScanEntryDeadlineObjectAndSymlinkLimits(t *testing.T) {
 		t.Fatalf("deadline: %v", err)
 	}
 	root = testutil.TempDir(t)
-	writeFixture(t, filepath.Join(root, "objects", "pack", "pack-test.pack"), packHeader(101))
+	writeFixture(t, filepath.Join(root, repositoryDirName, "objects", "pack", "pack-test.pack"), packHeader(101))
 	if _, err := scan(t.Context(), root, usage{1 << 20, 1000, 100}); err == nil || !strings.Contains(err.Error(), "object budget") {
 		t.Fatalf("pack objects: %v", err)
 	}
 	root = testutil.TempDir(t)
-	writeFixture(t, filepath.Join(root, "objects", "ab", strings.Repeat("c", 38)), nil)
+	writeFixture(t, filepath.Join(root, repositoryDirName, "objects", "ab", strings.Repeat("c", 38)), nil)
 	if used, err := scan(t.Context(), root, usage{1 << 20, 1000, 100}); err != nil || used.objects != 1 {
 		t.Fatalf("loose objects: %+v %v", used, err)
 	}

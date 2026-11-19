@@ -18,6 +18,8 @@ import (
 	"github.com/zekihan/git-mirrorer/internal/safepath"
 )
 
+const repositoryDirName = "repo.git"
+
 type Lease struct {
 	lock      *os.File
 	Path      string
@@ -75,7 +77,7 @@ func Acquire(stateDir, source string) (*Lease, error) {
 		file.Close()
 		return nil, err
 	}
-	return &Lease{namespace: namespace, lock: file, Path: filepath.Join(entry, "repo.git"), entry: entry, source: source}, nil
+	return &Lease{namespace: namespace, lock: file, Path: filepath.Join(entry, repositoryDirName), entry: entry, source: source}, nil
 }
 
 func ensureDirectory(path string) error {
@@ -138,7 +140,7 @@ func (l *Lease) Prepare(ctx context.Context, client *git.Client) (cloned bool, p
 			prepareErr = errors.Join(prepareErr, fmt.Errorf("partial clone cleanup stopped; remove the abandoned temporary entry while idle: %w", err))
 		}
 	}()
-	repoPath := filepath.Join(temp, "repo.git")
+	repoPath := filepath.Join(temp, repositoryDirName)
 	if err := client.Clone(ctx, l.source, repoPath); err != nil {
 		return false, &RefreshError{Err: err}
 	}
