@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -151,6 +152,67 @@ func TestSymlinkAncestorsAndConfigDirectory(t *testing.T) {
 	if err != nil || cfg.Repositories[0].Source != filepath.Join(base, "source.git") {
 		t.Fatalf("load: %+v %v", cfg, err)
 	}
+}
+
+func TestLocalPathsResolveSymlinkBeforeParent(t *testing.T) {
+	testutil.Isolate(t)
+	base := canonicalTemp(t)
+	actual := filepath.Join(base, "actual")
+	child := filepath.Join(actual, "child")
+	if err := os.MkdirAll(child, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(child, filepath.Join(base, "link")); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{base, actual} {
+		testutil.Git(t, dir, "init", "--bare", "--initial-branch=main", "source.git")
+		testutil.Git(t, dir, "init", "--bare", "--initial-branch=main", "backup.git")
+	}
+	if err := os.WriteFile(filepath.Join(actual, "config.yaml"), []byte(validYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name string
+		load func() (Config, error)
+	}{
+		{"paths in configuration", func() (Config, error) {
+			destination := (&url.URL{Scheme: "file", Path: base + "/link/../backup.git"}).String()
+			input := strings.NewReplacer("./source.git", "./link/../source.git", "./backup.git", destination).Replace(validYAML)
+			return Decode(strings.NewReader("stateDir: ./link/../.git-mirrorer\n"+input), base)
+		}},
+		{"configuration filename", func() (Config, error) {
+			return Load(base + "/link/../config.yaml")
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := tc.load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			repo := cfg.Repositories[0]
+			if want := filepath.Join(actual, "source.git"); repo.Source != want {
+				t.Errorf("source = %q, want %q", repo.Source, want)
+			}
+			if want := filepath.Join(actual, "backup.git"); repo.Destinations[0].URL != want {
+				t.Errorf("destination = %q, want %q", repo.Destinations[0].URL, want)
+			}
+			if want := filepath.Join(actual, ".git-mirrorer"); cfg.StateDir != want {
+				t.Errorf("stateDir = %q, want %q", cfg.StateDir, want)
+			}
+		})
+	}
+	t.Run("dangling symlink before parent", func(t *testing.T) {
+		if err := os.Symlink(filepath.Join(actual, "missing"), filepath.Join(base, "dangling")); err != nil {
+			t.Fatal(err)
+		}
+		input := strings.Replace(validYAML, "./source.git", "./dangling/../source.git", 1)
+		if _, err := Decode(strings.NewReader(input), base); err == nil {
+			t.Fatal("accepted a source path through a dangling symlink")
+		}
+	})
 }
 
 func canonicalTemp(t *testing.T) string {
