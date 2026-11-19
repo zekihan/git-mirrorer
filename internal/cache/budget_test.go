@@ -157,6 +157,14 @@ func writeFixture(t *testing.T, path string, data []byte) {
 	}
 }
 
+func packHeader(objects uint32) []byte {
+	header := make([]byte, 12)
+	copy(header, "PACK")
+	binary.BigEndian.PutUint32(header[4:], 2)
+	binary.BigEndian.PutUint32(header[8:], objects)
+	return header
+}
+
 func TestBudgetPreflightIncludesIdleSourcesAndAbandonedClones(t *testing.T) {
 	for _, name := range []string{"idle", ".clone-abandoned"} {
 		t.Run(name, func(t *testing.T) {
@@ -216,6 +224,51 @@ func TestBudgetChecksCompletedFastWritesAndReserve(t *testing.T) {
 	}
 }
 
+func TestBudgetCountsIncomingPackObjects(t *testing.T) {
+	for _, scope := range []string{"total", "source"} {
+		t.Run(scope, func(t *testing.T) {
+			lease := acquireTestLease(t, testutil.TempDir(t), "active")
+			limits := DefaultLimits()
+			limits.SourceObjects = 100
+			limits.TotalObjects = 200
+			objects := uint32(101)
+			if scope == "total" {
+				objects = 201
+			}
+			// index-pack --stdin writes this header before finalizing the pack.
+			header := packHeader(objects)
+			incoming := filepath.Join(lease.Path, "objects", "pack", "tmp_pack_ABC123")
+			writeFixture(t, incoming, header[:11])
+			if err := lease.checkBudget(t.Context(), limits); err != nil {
+				t.Fatalf("partial pack header: %v", err)
+			}
+			writeFixture(t, incoming, header)
+			if err := lease.checkBudget(t.Context(), limits); err == nil || !strings.Contains(err.Error(), scope+" cache: cache object budget exceeded") {
+				t.Fatalf("pack declares %d objects before finalization: %v", objects, err)
+			}
+		})
+	}
+}
+
+func TestBudgetCountsFinalizingPackOnce(t *testing.T) {
+	root := testutil.TempDir(t)
+	packDir := filepath.Join(root, "objects", "pack")
+	incoming := filepath.Join(packDir, "tmp_pack_ABC123")
+	writeFixture(t, incoming, packHeader(100))
+	// Git may link the final filename before unlinking the temporary name.
+	if err := os.Link(incoming, filepath.Join(packDir, "pack-finalized.pack")); err != nil {
+		t.Fatal(err)
+	}
+	limit := usage{1 << 20, 1000, 100}
+	if used, err := scan(t.Context(), root, limit); err != nil || used.objects != 100 {
+		t.Fatalf("one pack under two names: %+v %v", used, err)
+	}
+	writeFixture(t, filepath.Join(packDir, "pack-distinct.pack"), packHeader(1))
+	if _, err := scan(t.Context(), root, limit); err == nil || !strings.Contains(err.Error(), "object budget") {
+		t.Fatalf("distinct pack did not count: %v", err)
+	}
+}
+
 func TestBudgetLockWaitHasDeadline(t *testing.T) {
 	lease := acquireTestLease(t, testutil.TempDir(t), "active")
 	path := filepath.Join(filepath.Dir(filepath.Dir(lease.entry)), "locks", "budget.lock")
@@ -249,11 +302,7 @@ func TestStreamingScanEntryDeadlineObjectAndSymlinkLimits(t *testing.T) {
 		t.Fatalf("deadline: %v", err)
 	}
 	root = testutil.TempDir(t)
-	header := make([]byte, 12)
-	copy(header, "PACK")
-	binary.BigEndian.PutUint32(header[4:], 2)
-	binary.BigEndian.PutUint32(header[8:], 101)
-	writeFixture(t, filepath.Join(root, "objects", "pack", "pack-test.pack"), header)
+	writeFixture(t, filepath.Join(root, "objects", "pack", "pack-test.pack"), packHeader(101))
 	if _, err := scan(t.Context(), root, usage{1 << 20, 1000, 100}); err == nil || !strings.Contains(err.Error(), "object budget") {
 		t.Fatalf("pack objects: %v", err)
 	}
