@@ -47,25 +47,28 @@ func (c *Client) SetConnectRetry(budget time.Duration) {
 	c.connect = &connectTracker{budget: budget, hosts: map[string]*remoteState{}}
 }
 
-func (t *connectTracker) deadline(key string) (time.Time, bool) {
+func (t *connectTracker) start(key string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.hosts[key] == nil {
+		t.hosts[key] = &remoteState{first: time.Now()}
+	}
+}
+
+func (t *connectTracker) budgetLeft(key string) time.Duration {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	state := t.hosts[key]
-	if state == nil {
-		state = &remoteState{first: time.Now()}
-		t.hosts[key] = state
+	if state.contacted {
+		return 0
 	}
-	return state.first.Add(t.budget), !state.contacted
+	return time.Until(state.first.Add(t.budget))
 }
 
 func (t *connectTracker) markContacted(key string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if state := t.hosts[key]; state != nil {
-		state.contacted = true
-	} else {
-		t.hosts[key] = &remoteState{first: time.Now(), contacted: true}
-	}
+	t.hosts[key].contacted = true
 }
 
 // remoteKey returns "host:port" for remote addresses and "" for local paths.
@@ -130,10 +133,10 @@ func (c *Client) retry(ctx context.Context, remote string, operation func(contex
 	if key == "" {
 		tracker = nil
 	}
-	for transient, connect := 0, 0; ; {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
+	if tracker != nil && ctx.Err() == nil {
+		tracker.start(key)
+	}
+	for transient, connect := 0, 0; ctx.Err() == nil; {
 		err := operation(ctx)
 		if ctx.Err() != nil {
 			if errors.Is(err, ctx.Err()) {
@@ -147,15 +150,19 @@ func (c *Client) retry(ctx context.Context, remote string, operation func(contex
 			}
 			return nil
 		}
+		var remaining time.Duration
+		if tracker != nil && connectFailure(err) {
+			remaining = tracker.budgetLeft(key)
+		}
 		var delay time.Duration
 		switch {
-		case tracker != nil && connectFailure(err) && connectBudgetLeft(tracker, key) > 0:
+		case remaining > 0:
 			delay = connectBackoffBase << min(connect, 16)
 			if delay > connectBackoffMax || delay <= 0 {
 				delay = connectBackoffMax
 			}
 			connect++
-			delay = min(delay+time.Duration(rand.Int64N(int64(delay/2)+1)), connectBudgetLeft(tracker, key))
+			delay = min(delay+time.Duration(rand.Int64N(int64(delay/2)+1)), remaining)
 		case transient < 2 && transientConnectionError(err):
 			delay = retryBackoffBase << transient
 			transient++
@@ -171,14 +178,7 @@ func (c *Client) retry(ctx context.Context, remote string, operation func(contex
 		case <-timer.C:
 		}
 	}
-}
-
-func connectBudgetLeft(t *connectTracker, key string) time.Duration {
-	deadline, pending := t.deadline(key)
-	if !pending {
-		return 0
-	}
-	return time.Until(deadline)
+	return ctx.Err()
 }
 
 var permanentDiagnostics = []string{
