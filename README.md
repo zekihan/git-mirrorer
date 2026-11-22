@@ -55,12 +55,19 @@ repositories:
         atomic: true
 ```
 
-The example shows all defaults. `repositories` must be nonempty. Every repository
-needs a unique name, source, and at least one named destination. `lfs` defaults to
-false and destination `atomic` defaults to true. `concurrency` limits active source
-jobs; destinations for a source run sequentially. `operationTimeout` bounds each
-Git/LFS subprocess and the complete retry sequence for each network command. `runTimeout: 0s` disables the whole-run deadline. `connectRetry` is described under
-[command retries](#command-retries-and-whole-run-retries).
+The example shows the scalar defaults. `repositories` must be nonempty. Every
+repository needs a unique name, source, and at least one destination; destination
+names must be unique within their repository. Names cannot have surrounding
+whitespace or control characters. `lfs` defaults to false and destination `atomic`
+defaults to true. Destination `refMappings` defaults to an empty list;
+`trustedLocalHooks` defaults to false and is allowed only for local destinations.
+
+`concurrency` must be positive and limits active source jobs; destinations for a
+source run sequentially. `operationTimeout` must be positive and bounds each
+Git/LFS subprocess and the complete retry sequence for each network command.
+`runTimeout` and `connectRetry` must be nonnegative; `runTimeout: 0s` disables the
+whole-run deadline. `logLevel` accepts `debug`, `info`, `warn`, or `error`.
+`connectRetry` is described under [command retries](#command-retries-and-whole-run-retries).
 
 Paths, including relative local repository paths, resolve from the configuration
 file's directory. Addresses support HTTPS, SSH URLs, SCP-style SSH addresses, and
@@ -81,8 +88,9 @@ configuration support, HTTP endpoint, or internal scheduler.
 ## Mirroring and failures
 
 All source-advertised refs under `refs/` are mirrored, including tags, branches,
-notes, and custom refs. Hidden refs cannot be fetched. Per-destination `refMappings` can relocate whole
-ref namespaces, for example when preserving GitHub pull refs on Forgejo:
+notes, and custom refs. Hidden refs cannot be fetched. Per-destination `refMappings`
+can relocate whole ref namespaces, for example when preserving GitHub pull refs on
+Forgejo. Add the following under the destination entry:
 
 ```yaml
 refMappings:
