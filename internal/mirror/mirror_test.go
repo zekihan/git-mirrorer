@@ -442,8 +442,9 @@ func TestRefreshMirrorsLooseRefsWithObjectLikePaths(t *testing.T) {
 			testutil.Commit(t, source, "data", "snapshot")
 			cfg := configured(t, source, dest)
 			cfg.Cache = cache.DefaultLimits()
-			cfg.Cache.SourceObjects = 3 // One commit, one tree, and one blob.
-			cfg.Cache.TotalObjects = 3
+			// Repacking can temporarily retain both loose and packed copies.
+			cfg.Cache.SourceObjects = 6
+			cfg.Cache.TotalObjects = 6
 			runner := realRunner(t, cfg)
 			if result := runner.Run(t.Context()); result.Outcome != Succeeded {
 				t.Fatalf("initial mirror: %+v", result.Sources[0].Error)
@@ -451,6 +452,11 @@ func TestRefreshMirrorsLooseRefsWithObjectLikePaths(t *testing.T) {
 			testutil.EqualRefs(t, source, dest)
 
 			testutil.Git(t, source, "branch", branch)
+			if strings.HasPrefix(branch, "objects/ab/") {
+				for _, c := range []string{"d", "e", "f"} {
+					testutil.Git(t, source, "branch", "objects/ab/"+strings.Repeat(c, 38))
+				}
+			}
 			result := runner.Run(t.Context())
 			if result.Outcome != Succeeded {
 				t.Fatalf("ref-only refresh: %+v", result.Sources[0].Error)
