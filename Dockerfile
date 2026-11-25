@@ -12,6 +12,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 
 FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 RUN apk add --no-cache ca-certificates git git-lfs openssh-client tini \
+    && apk upgrade --no-cache git \
     && addgroup -g 25090 git-mirrorer \
     && adduser -D -u 25090 -G git-mirrorer -h /home/git-mirrorer git-mirrorer \
     && mkdir -p /data/.git-mirrorer \
