@@ -162,6 +162,8 @@ type Runner struct {
 	Logger *slog.Logger
 }
 
+const destinationRetryDelay = 15 * time.Second
+
 func failure(stage string, err error) *Failure {
 	code := stage
 	if errors.Is(err, context.DeadlineExceeded) {
@@ -287,43 +289,76 @@ func (r *Runner) runSource(ctx context.Context, repo config.Repository) (result 
 		}
 		return result
 	}
-	for _, dest := range repo.Destinations {
-		destination := DestinationResult{Name: dest.Name, Outcome: Succeeded}
-		if ctx.Err() != nil {
-			destination.Outcome, destination.Error = Canceled, failure("run", ctx.Err())
-		} else {
-			if r.Logger != nil {
-				r.Logger.InfoContext(ctx, "Mirroring destination", "source", repo.Name, "destination", dest.Name)
-			}
-			destStart := time.Now()
-			destination.Attempted = true
-			operationCtx := ctx
-			if dest.TrustedLocalHooks {
-				operationCtx = git.WithTrustedLocalHooks(ctx)
-			}
-			stage, err = "destination-path", r.Config.CheckLocalPath(dest.URL)
-			if err == nil && repo.LFS {
-				stage, err = "lfs-push", r.Git.LFSPush(operationCtx, path, dest.URL)
-			}
-			if err == nil {
-				stage = "push"
-				destination.Changes, err = r.Git.Push(operationCtx, path, dest.URL, dest.AtomicEnabled(), dest.RefMappings...)
-			}
-			destination.Duration = time.Since(destStart)
-			if err != nil {
-				destination.Outcome, destination.Error = Failed, failure(stage, err)
+	var retryDestinations []int
+	for i, dest := range repo.Destinations {
+		destination, retryable := r.runDestination(ctx, repo, path, dest)
+		result.Destinations = append(result.Destinations, destination)
+		if retryable && r.Config.TransientRetry > 0 {
+			retryDestinations = append(retryDestinations, i)
+		}
+	}
+	if len(retryDestinations) > 0 && ctx.Err() == nil {
+		if r.Logger != nil {
+			r.Logger.InfoContext(ctx, "Retrying transient destination failures", "source", repo.Name, "destinations", len(retryDestinations), "delay", destinationRetryDelay)
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(destinationRetryDelay):
+			for _, i := range retryDestinations {
 				if ctx.Err() != nil {
-					destination.Outcome = Canceled
+					break
 				}
+				destination, _ := r.runDestination(ctx, repo, path, repo.Destinations[i])
+				if !destination.Attempted {
+					break
+				}
+				destination.Duration += result.Destinations[i].Duration
+				result.Destinations[i] = destination
 			}
 		}
+	}
+	for _, destination := range result.Destinations {
 		if destination.Outcome != Succeeded {
 			result.Outcome = Failed
 		}
-		result.Destinations = append(result.Destinations, destination)
 	}
 	if ctx.Err() != nil {
 		result.Outcome = Canceled
 	}
 	return result
+}
+
+func (r *Runner) runDestination(ctx context.Context, repo config.Repository, path string, dest config.Destination) (DestinationResult, bool) {
+	destination := DestinationResult{Name: dest.Name, Outcome: Succeeded}
+	if ctx.Err() != nil {
+		destination.Outcome, destination.Error = Canceled, failure("run", ctx.Err())
+		return destination, false
+	}
+	if r.Logger != nil {
+		r.Logger.InfoContext(ctx, "Mirroring destination", "source", repo.Name, "destination", dest.Name)
+	}
+	start := time.Now()
+	destination.Attempted = true
+	operationCtx := ctx
+	if dest.TrustedLocalHooks {
+		operationCtx = git.WithTrustedLocalHooks(ctx)
+	}
+	stage, err := "destination-path", r.Config.CheckLocalPath(dest.URL)
+	if err == nil && repo.LFS {
+		stage, err = "lfs-push", r.Git.LFSPush(operationCtx, path, dest.URL)
+	}
+	if err == nil {
+		stage = "push"
+		destination.Changes, err = r.Git.Push(operationCtx, path, dest.URL, dest.AtomicEnabled(), dest.RefMappings...)
+	}
+	destination.Duration = time.Since(start)
+	if err == nil {
+		return destination, false
+	}
+	destination.Outcome, destination.Error = Failed, failure(stage, err)
+	if ctx.Err() != nil {
+		destination.Outcome = Canceled
+		return destination, false
+	}
+	return destination, git.IsTransientRemoteError(dest.URL, err)
 }

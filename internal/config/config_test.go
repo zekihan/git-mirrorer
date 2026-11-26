@@ -25,7 +25,7 @@ func TestDefaultsAndRelativePaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Concurrency != 4 || cfg.OperationTimeout.String() != "10m0s" || cfg.RunTimeout != 0 || cfg.ConnectRetry != 3*time.Minute || cfg.LogLevel != "info" {
+	if cfg.Concurrency != 4 || cfg.OperationTimeout.String() != "10m0s" || cfg.RunTimeout != 0 || cfg.ConnectRetry != 3*time.Minute || cfg.TransientRetry != 2*time.Minute || cfg.LogLevel != "info" {
 		t.Fatalf("defaults: %+v", cfg)
 	}
 	if cfg.StateDir != filepath.Join(base, ".git-mirrorer") || cfg.Repositories[0].Source != filepath.Join(base, "source.git") {
@@ -37,6 +37,10 @@ func TestDefaultsAndRelativePaths(t *testing.T) {
 	cfg, err = Decode(strings.NewReader(validYAML+"        atomic: false\n"), base)
 	if err != nil || cfg.Repositories[0].Destinations[0].AtomicEnabled() {
 		t.Fatalf("explicit false: %v", err)
+	}
+	cfg, err = Decode(strings.NewReader("transientRetry: 0s\n"+validYAML), base)
+	if err != nil || cfg.TransientRetry != 0 {
+		t.Fatalf("disabled transient retry: %v, %v", cfg.TransientRetry, err)
 	}
 }
 
@@ -51,6 +55,7 @@ func TestRejectInvalidConfiguration(t *testing.T) {
 		"timeout":                "operationTimeout: 0s\n" + validYAML,
 		"negative run":           "runTimeout: -1s\n" + validYAML,
 		"negative connect retry": "connectRetry: -1s\n" + validYAML,
+		"negative transient":     "transientRetry: -1s\n" + validYAML,
 		"level":                  "logLevel: verbose\n" + validYAML,
 		"self":                   strings.ReplaceAll(validYAML, "./backup.git", "./source.git"),
 		"cache overlap":          strings.ReplaceAll(validYAML, "./backup.git", "./.git-mirrorer/repos/a"),

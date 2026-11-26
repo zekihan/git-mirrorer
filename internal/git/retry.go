@@ -35,16 +35,15 @@ type remoteState struct {
 	contacted bool
 }
 
-// SetConnectRetry sets how long connection-phase failures (DNS, refused,
-// timed out, unreachable, SSH handshake failures) are retried for a remote
-// endpoint that has not yet been reached. Zero disables the extended budget.
-// Call before using the client concurrently.
-func (c *Client) SetConnectRetry(budget time.Duration) {
-	if budget <= 0 {
+// SetRetryBudgets configures startup connection retries and retries after
+// successful contact. Call before using the client concurrently.
+func (c *Client) SetRetryBudgets(connect, transient time.Duration) {
+	c.transientRetry = transient
+	if connect <= 0 && transient <= 0 {
 		c.connect = nil
 		return
 	}
-	c.connect = &connectTracker{budget: budget, hosts: map[string]*remoteState{}}
+	c.connect = &connectTracker{budget: connect, hosts: map[string]*remoteState{}}
 }
 
 func (t *connectTracker) start(key string) {
@@ -55,14 +54,14 @@ func (t *connectTracker) start(key string) {
 	}
 }
 
-func (t *connectTracker) budgetLeft(key string) time.Duration {
+func (t *connectTracker) state(key string) (remaining time.Duration, contacted bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	state := t.hosts[key]
 	if state.contacted {
-		return 0
+		return 0, true
 	}
-	return time.Until(state.first.Add(t.budget))
+	return time.Until(state.first.Add(t.budget)), false
 }
 
 func (t *connectTracker) markContacted(key string) {
@@ -122,9 +121,15 @@ func remoteKey(address string) string {
 	return net.JoinHostPort(strings.ToLower(host), "22")
 }
 
-// retry runs a network command against remote. Connection-phase failures are
-// retried within the remote's connect budget; other recognized transient
-// failures get at most two retries. Everything shares the operation timeout.
+func exponentialDelay(attempt int) time.Duration {
+	delay := connectBackoffBase << min(attempt, 16)
+	if delay > connectBackoffMax || delay <= 0 {
+		delay = connectBackoffMax
+	}
+	return delay + time.Duration(rand.Int64N(int64(delay/2)+1))
+}
+
+// retry runs a network command and its backoffs under one operation timeout.
 func (c *Client) retry(ctx context.Context, remote string, operation func(context.Context) error) error {
 	ctx, cancel := context.WithTimeout(ctx, c.runner.Timeout)
 	defer cancel()
@@ -136,7 +141,8 @@ func (c *Client) retry(ctx context.Context, remote string, operation func(contex
 	if tracker != nil && ctx.Err() == nil {
 		tracker.start(key)
 	}
-	for transient, connect := 0, 0; ctx.Err() == nil; {
+	var transientDeadline time.Time
+	for standard, connect, extended := 0, 0, 0; ctx.Err() == nil; {
 		err := operation(ctx)
 		if ctx.Err() != nil {
 			if errors.Is(err, ctx.Err()) {
@@ -151,21 +157,29 @@ func (c *Client) retry(ctx context.Context, remote string, operation func(contex
 			return nil
 		}
 		var remaining time.Duration
-		if tracker != nil && connectFailure(err) {
-			remaining = tracker.budgetLeft(key)
+		var contacted bool
+		if tracker != nil {
+			remaining, contacted = tracker.state(key)
 		}
 		var delay time.Duration
 		switch {
-		case remaining > 0:
-			delay = connectBackoffBase << min(connect, 16)
-			if delay > connectBackoffMax || delay <= 0 {
-				delay = connectBackoffMax
-			}
+		case remaining > 0 && connectFailure(err):
+			delay = min(exponentialDelay(connect), remaining)
 			connect++
-			delay = min(delay+time.Duration(rand.Int64N(int64(delay/2)+1)), remaining)
-		case transient < 2 && transientConnectionError(err):
-			delay = retryBackoffBase << transient
-			transient++
+		case !transientConnectionError(err):
+			return err
+		case contacted && c.transientRetry > 0:
+			if transientDeadline.IsZero() {
+				transientDeadline = time.Now().Add(c.transientRetry)
+			}
+			delay = exponentialDelay(extended)
+			if delay >= time.Until(transientDeadline) {
+				return err
+			}
+			extended++
+		case standard < 2:
+			delay = retryBackoffBase << standard
+			standard++
 			delay += time.Duration(rand.Int64N(int64(delay / 2)))
 		default:
 			return err
@@ -177,8 +191,17 @@ func (c *Client) retry(ctx context.Context, remote string, operation func(contex
 			return ctx.Err()
 		case <-timer.C:
 		}
+		if ctx.Err() == nil && !transientDeadline.IsZero() && !time.Now().Before(transientDeadline) {
+			return err
+		}
 	}
 	return ctx.Err()
+}
+
+// IsTransientRemoteError reports whether a failed remote command is eligible
+// for another destination attempt.
+func IsTransientRemoteError(remote string, err error) bool {
+	return remoteKey(remote) != "" && transientConnectionError(err)
 }
 
 var permanentDiagnostics = []string{
@@ -237,6 +260,7 @@ func transientConnectionError(err error) bool {
 	}
 	for _, transient := range []string{
 		"connection reset", "connection refused", "connection timed out",
+		"operation timed out", "the git server, gitaly, is not available at this time",
 		"connection closed", "broken pipe", "network is unreachable",
 		"no route to host", "temporary failure in name resolution",
 		"remote end hung up unexpectedly", "unexpected disconnect",

@@ -112,7 +112,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) (code int
 		fmt.Fprintln(stderr, redact.Text(err.Error()))
 		return 2
 	}
-	client.SetConnectRetry(cfg.ConnectRetry)
+	client.SetRetryBudgets(cfg.ConnectRetry, cfg.TransientRetry)
 	for _, repo := range cfg.Repositories {
 		if repo.LFS {
 			if err := client.CheckLFS(ctx); err != nil {
