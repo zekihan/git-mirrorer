@@ -269,6 +269,15 @@ func TestBudgetCountsFinalizingPackOnce(t *testing.T) {
 	}
 }
 
+func TestBudgetIgnoresObjectLikeFilesOutsideRepository(t *testing.T) {
+	root := testutil.TempDir(t)
+	writeFixture(t, filepath.Join(root, "refs", "objects", "ab", strings.Repeat("c", 38)), nil)
+	writeFixture(t, filepath.Join(root, "refs", "objects", "pack", "release.pack"), packHeader(1))
+	if used, err := scan(t.Context(), root, usage{1 << 20, 1000, 100}); err != nil || used.objects != 0 {
+		t.Fatalf("object accounting outside repo.git: %+v, %v", used, err)
+	}
+}
+
 func TestBudgetLockWaitHasDeadline(t *testing.T) {
 	lease := acquireTestLease(t, testutil.TempDir(t), "active")
 	path := filepath.Join(filepath.Dir(filepath.Dir(lease.entry)), "locks", "budget.lock")

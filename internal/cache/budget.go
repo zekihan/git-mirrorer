@@ -54,6 +54,15 @@ type packIdentity struct {
 
 var walkTree = cachefs.Walk
 
+// CountObjects scans the leased source entry within the source limits.
+// Call it after Git has finished writing to the cache.
+func (l *Lease) CountObjects(ctx context.Context, limits Limits) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, limits.ValidationTimeout)
+	defer cancel()
+	used, err := scan(ctx, l.entry, usage{limits.SourceBytes, limits.SourceEntries, limits.SourceObjects})
+	return used.objects, err
+}
+
 // scan streams directory batches instead of WalkDir's unbounded sorted listing.
 // The cache is private to the service account; local concurrent hostile writers
 // are outside its trust model. Links and special files are always rejected.
