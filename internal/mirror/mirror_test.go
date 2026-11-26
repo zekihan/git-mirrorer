@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -442,21 +443,14 @@ func TestRefreshMirrorsLooseRefsWithObjectLikePaths(t *testing.T) {
 			testutil.Commit(t, source, "data", "snapshot")
 			cfg := configured(t, source, dest)
 			cfg.Cache = cache.DefaultLimits()
-			// Repacking can temporarily retain both loose and packed copies.
-			cfg.Cache.SourceObjects = 6
-			cfg.Cache.TotalObjects = 6
 			runner := realRunner(t, cfg)
 			if result := runner.Run(t.Context()); result.Outcome != Succeeded {
 				t.Fatalf("initial mirror: %+v", result.Sources[0].Error)
 			}
 			testutil.EqualRefs(t, source, dest)
+			before := assertCacheObjectCount(t, cfg, source)
 
 			testutil.Git(t, source, "branch", branch)
-			if strings.HasPrefix(branch, "objects/ab/") {
-				for _, c := range []string{"d", "e", "f"} {
-					testutil.Git(t, source, "branch", "objects/ab/"+strings.Repeat(c, 38))
-				}
-			}
 			result := runner.Run(t.Context())
 			if result.Outcome != Succeeded {
 				t.Fatalf("ref-only refresh: %+v", result.Sources[0].Error)
@@ -466,8 +460,45 @@ func TestRefreshMirrorsLooseRefsWithObjectLikePaths(t *testing.T) {
 			if _, err := os.Stat(ref); err != nil {
 				t.Fatalf("expected a loose cached ref: %v", err)
 			}
+			if after := assertCacheObjectCount(t, cfg, source); after != before {
+				t.Fatalf("ref-only refresh changed cached object count from %d to %d", before, after)
+			}
 		})
 	}
+}
+
+func assertCacheObjectCount(t *testing.T, cfg config.Config, source string) int64 {
+	t.Helper()
+	lease, err := cache.Acquire(cfg.StateDir, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Close()
+	objects, err := lease.CountObjects(t.Context(), cfg.Cache)
+	if err != nil {
+		t.Fatalf("scan cached objects: %v", err)
+	}
+
+	output := testutil.Git(t, lease.Path, "count-objects", "-v")
+	counts := make(map[string]int64, 2)
+	for line := range strings.Lines(output) {
+		key, value, _ := strings.Cut(line, ": ")
+		if key != "count" && key != "in-pack" {
+			continue
+		}
+		count, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		if err != nil || count < 0 {
+			t.Fatalf("invalid git object count: %q", line)
+		}
+		counts[key] = count
+	}
+	if len(counts) != 2 {
+		t.Fatalf("missing git object counts: %s", output)
+	}
+	if want := counts["count"] + counts["in-pack"]; objects != want {
+		t.Fatalf("cache scan counted %d objects, git counted %d", objects, want)
+	}
+	return objects
 }
 
 func TestReclaimsDisjointGitAndLFSSnapshotsUnderLease(t *testing.T) {
