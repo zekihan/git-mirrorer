@@ -24,6 +24,7 @@ type Config struct {
 	OperationTimeout time.Duration `yaml:"operationTimeout"`
 	RunTimeout       time.Duration `yaml:"runTimeout"`
 	ConnectRetry     time.Duration `yaml:"connectRetry"`
+	TransientRetry   time.Duration `yaml:"transientRetry"`
 	LogLevel         string        `yaml:"logLevel"`
 	Repositories     []Repository  `yaml:"repositories"`
 	localPaths       map[string]*safepath.Snapshot
@@ -57,7 +58,7 @@ func Load(filename string) (Config, error) {
 }
 
 func Decode(reader io.Reader, base string) (Config, error) {
-	cfg := Config{Cache: cache.DefaultLimits(), StateDir: ".git-mirrorer", Concurrency: 4, OperationTimeout: 10 * time.Minute, ConnectRetry: 3 * time.Minute, LogLevel: "info"}
+	cfg := Config{Cache: cache.DefaultLimits(), StateDir: ".git-mirrorer", Concurrency: 4, OperationTimeout: 10 * time.Minute, ConnectRetry: 3 * time.Minute, TransientRetry: 2 * time.Minute, LogLevel: "info"}
 	decoder := yaml.NewDecoder(reader)
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&cfg); err != nil {
@@ -82,8 +83,8 @@ func (c *Config) validate(base string) error {
 	if err := c.Cache.Validate(); err != nil {
 		return err
 	}
-	if c.Concurrency < 1 || c.OperationTimeout <= 0 || c.RunTimeout < 0 || c.ConnectRetry < 0 {
-		return errors.New("concurrency and operationTimeout must be positive; runTimeout and connectRetry must be nonnegative")
+	if c.Concurrency < 1 || c.OperationTimeout <= 0 || c.RunTimeout < 0 || c.ConnectRetry < 0 || c.TransientRetry < 0 {
+		return errors.New("concurrency and operationTimeout must be positive; runTimeout, connectRetry and transientRetry must be nonnegative")
 	}
 	switch c.LogLevel {
 	case "debug", "info", "warn", "error":

@@ -35,6 +35,7 @@ concurrency: 4
 operationTimeout: 10m
 runTimeout: 0s
 connectRetry: 3m
+transientRetry: 2m
 logLevel: info
 cache:
   sourceBytes: 5368709120
@@ -65,9 +66,10 @@ defaults to true. Destination `refMappings` defaults to an empty list;
 `concurrency` must be positive and limits active source jobs; destinations for a
 source run sequentially. `operationTimeout` must be positive and bounds each
 Git/LFS subprocess and the complete retry sequence for each network command.
-`runTimeout` and `connectRetry` must be nonnegative; `runTimeout: 0s` disables the
-whole-run deadline. `logLevel` accepts `debug`, `info`, `warn`, or `error`.
-`connectRetry` is described under [command retries](#command-retries-and-whole-run-retries).
+`runTimeout`, `connectRetry`, and `transientRetry` must be nonnegative.
+`runTimeout: 0s` disables the whole-run deadline. `logLevel` accepts
+`debug`, `info`, `warn`, or `error`. See [command retries](#command-retries-and-whole-run-retries)
+for the retry settings.
 
 Paths, including relative local repository paths, resolve from the configuration
 file's directory. Addresses support HTTPS, SSH URLs, SCP-style SSH addresses, and
@@ -141,14 +143,20 @@ below. `connectRetry: 0s` disables the budget. SSH connections also get
 `-o ConnectTimeout=20` so a silently dropped connection leaves room for several
 attempts; options inside a supplied `GIT_SSH_COMMAND` take precedence.
 
-**Other transient failures** are retried up to three attempts total (the initial
-attempt plus at most two retries), with backoff waits of 1-1.5 seconds and then 2-3
-seconds.
+**After successful contact**, a recognized transient failure can start a
+per-command `transientRetry` window (default `2m`). It begins with the first
+transient failure after contact and uses the same exponential backoff and jitter
+as connection retries. Each retry must start within that window. The operation
+deadline still bounds the running attempt. A remote with no successful contact
+uses up to three attempts for transient errors outside the startup connection
+budget, with waits of 1-1.5 seconds and then 2-3 seconds. Local endpoints and
+`transientRetry: 0s` also use this three-attempt policy for other transient errors.
 
 Retries require a failed Git/LFS command with a recognized diagnostic: connection
 reset/refused/timed out/closed, broken pipe, unreachable network or no route,
 temporary name-resolution failure, unexpected disconnect/remote hangup, early EOF,
-improper TLS termination, SSH handshake failure, or HTTP 429/500/502/503/504.
+improper TLS termination, SSH handshake failure, HTTP 429/500/502/503/504, or
+GitLab explicitly reporting that Gitaly is unavailable.
 Authentication and host-key failures, missing repositories, rejected refs (including
 protected branches and non-fast-forward updates), and corruption fail without retry.
 Permanent diagnostics take precedence over transient ones. Name-resolution failures
@@ -167,8 +175,15 @@ snapshot; a successful retry reconciles the refs and may report them as unchange
 If the command ultimately fails, the destination is reported failed even though
 remote refs may have changed. A later invocation can reconcile again.
 
-The application runs once and does not automatically retry the whole run or queue
-failed destinations for later. External callers (for example cron or a job runner)
+**Delayed destination pass.** After a source has tried all of its destinations,
+the worker waits 15 seconds if any remote destination still has a recognized
+transient Git or LFS failure. It then mirrors only those destinations once more
+from the same locked snapshot, with the usual per-command limits. Successful
+destinations and permanent failures are left as reported. Cancellation or the
+whole-run deadline can stop the delayed pass. `transientRetry: 0s` also disables
+this pass. Final incomplete runs still exit nonzero.
+
+The application runs once. External callers (for example cron or a job runner)
 may rerun an incomplete job after inspecting its report/exit status. A new run
 refreshes each source again, so it may mirror a newer snapshot; it does not resume
 the previous run. Successful destinations tolerate repetition. External whole-run

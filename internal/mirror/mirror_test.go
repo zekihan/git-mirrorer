@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/zekihan/git-mirrorer/internal/cache"
@@ -224,6 +225,77 @@ func TestOperationTimeoutDoesNotCancelOtherDestinations(t *testing.T) {
 	result := (&Runner{Config: configured(t, "source", "slow", "healthy"), Git: backend}).Run(t.Context())
 	if result.Totals.Failed != 1 || result.Totals.Succeeded != 1 || result.Sources[0].Destinations[0].Error.Code != "timeout" {
 		t.Fatalf("%+v", result)
+	}
+}
+
+type retryBackend struct {
+	fakeBackend
+	push func(string, string) (git.Changes, error)
+}
+
+func (b *retryBackend) Push(_ context.Context, path, destination string, _ bool, _ ...git.RefMapping) (git.Changes, error) {
+	return b.push(path, destination)
+}
+
+func TestRetryTransientDestinations(t *testing.T) {
+	for _, tc := range []struct {
+		name, detail string
+		persistent   bool
+		budget       time.Duration
+		timeout      time.Duration
+		wantAttempts int
+		wantOutcome  Outcome
+	}{
+		{"recovers", "remote: ERROR: The git server, Gitaly, is not available at this time", false, 2 * time.Minute, 0, 2, Succeeded},
+		{"persistent", "Connection reset by peer", true, 2 * time.Minute, 0, 2, Failed},
+		{"public key", "git@gitlab.com: Permission denied (publickey)", false, 2 * time.Minute, 0, 1, Failed},
+		{"disabled", "Connection reset by peer", false, 0, 0, 1, Failed},
+		{"deadline during wait", "Connection reset by peer", false, 2 * time.Minute, time.Second, 1, Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const source = "git@example.org:owner/source.git"
+			const remote = "git@gitlab.com:owner/mirror.git"
+			const other = "git@example.net:owner/mirror.git"
+			cfg := configured(t, source, remote, other)
+			cfg.TransientRetry, cfg.RunTimeout = tc.budget, tc.timeout
+			synctest.Test(t, func(t *testing.T) {
+				backend := &retryBackend{}
+				attempts, otherAttempts := 0, 0
+				start := time.Now()
+				backend.push = func(path, destination string) (git.Changes, error) {
+					if path != source || backend.active != 1 {
+						t.Errorf("push did not use the locked snapshot: path=%q, leases=%d", path, backend.active)
+					}
+					if destination == other {
+						otherAttempts++
+						return git.Changes{Unchanged: 1}, nil
+					}
+					attempts++
+					if attempts == 2 && (otherAttempts != 1 || time.Since(start) != destinationRetryDelay) {
+						t.Errorf("second pass started before healthy destination or delay: healthy=%d, elapsed=%s", otherAttempts, time.Since(start))
+					}
+					if attempts == 1 || tc.persistent {
+						return git.Changes{}, &git.CommandError{ExitCode: 128, Detail: tc.detail, Cause: errors.New("exit status 128")}
+					}
+					return git.Changes{Updated: 1}, nil
+				}
+				result := (&Runner{Config: cfg, Git: backend}).Run(t.Context())
+				if attempts != tc.wantAttempts || otherAttempts != 1 || backend.prepares != 1 || backend.active != 0 {
+					t.Fatalf("attempts=%d, other=%d, prepares=%d, leases=%d", attempts, otherAttempts, backend.prepares, backend.active)
+				}
+				if result.Outcome != tc.wantOutcome || result.Totals.Attempted != 2 {
+					t.Fatalf("report: %+v", result)
+				}
+				destination := result.Sources[0].Destinations[0]
+				if tc.wantOutcome == Succeeded {
+					if destination.Error != nil || destination.Changes.Updated != 1 || result.Totals.Failed != 0 {
+						t.Fatalf("recovered destination: %+v", destination)
+					}
+				} else if destination.Outcome != Failed || destination.Error == nil || result.Totals.Failed != 1 {
+					t.Fatalf("failed destination: %+v", destination)
+				}
+			})
+		})
 	}
 }
 

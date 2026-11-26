@@ -23,6 +23,9 @@ func TestTransientConnectionError(t *testing.T) {
 		want   bool
 	}{
 		{"ssh: connect to host example port 22: Connection timed out", true},
+		{"ssh: connect to host github.com port 22: Operation timed out", true},
+		{"remote: ERROR: The git server, Gitaly, is not available at this time", true},
+		{"destination rejected refs: remote: ERROR: The git server, Gitaly, is not available at this time", false},
 		{"fatal: early EOF", true},
 		{"fatal: unable to access URL: The requested URL returned error: 503", true},
 		{"Temporary failure in name resolution", true},
@@ -159,8 +162,92 @@ func fastConnectBackoff(t *testing.T) {
 
 func connectClient(budget time.Duration) *Client {
 	c := &Client{runner: &Runner{Timeout: 30 * time.Second}}
-	c.SetConnectRetry(budget)
+	c.SetRetryBudgets(budget, 0)
 	return c
+}
+
+func TestRetryRidesOutShortOutageOfContactedRemote(t *testing.T) {
+	for _, detail := range []string{
+		"kex_exchange_identification: read: Connection reset by peer",
+		"ssh: connect to host github.com port 22: Connection timed out",
+		"ssh: connect to host github.com port 22: Operation timed out",
+		"fatal: the remote end hung up unexpectedly",
+		"remote: ERROR: The git server, Gitaly, is not available at this time",
+	} {
+		t.Run(detail, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				const remote = "git@example.org:owner/repo.git"
+				c := &Client{runner: &Runner{Timeout: 10 * time.Minute}}
+				c.SetRetryBudgets(0, 2*time.Minute)
+				if err := c.retry(t.Context(), remote, func(context.Context) error { return nil }); err != nil {
+					t.Fatal(err)
+				}
+				start := time.Now()
+				calls := 0
+				err := c.retry(t.Context(), remote, func(context.Context) error {
+					calls++
+					if time.Since(start) >= 15*time.Second {
+						return nil
+					}
+					return connectionError(detail)
+				})
+				if err != nil || calls <= 3 {
+					t.Fatalf("calls=%d err=%v", calls, err)
+				}
+			})
+		})
+	}
+}
+
+func TestExtendedRetryBounds(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		budget time.Duration
+		limit  time.Duration
+		cancel bool
+		detail string
+		want   error
+		calls  int
+	}{
+		{"sustained outage", 5 * time.Second, time.Minute, false, "Connection reset by peer", nil, 3},
+		{"disabled", 0, time.Minute, false, "Connection reset by peer", nil, 3},
+		{"public key", time.Minute, time.Minute, false, "git@gitlab.com: Permission denied (publickey)", nil, 1},
+		{"deadline", time.Minute, 2 * time.Second, false, "Connection reset by peer", context.DeadlineExceeded, 2},
+		{"cancellation", time.Minute, time.Minute, true, "Connection reset by peer", context.Canceled, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				const remote = "git@gitlab.com:owner/repo.git"
+				c := &Client{runner: &Runner{Timeout: tc.limit}}
+				c.SetRetryBudgets(3*time.Minute, tc.budget)
+				if err := c.retry(t.Context(), remote, func(context.Context) error { return nil }); err != nil {
+					t.Fatal(err)
+				}
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				if tc.cancel {
+					time.AfterFunc(2*time.Second, cancel)
+				}
+				start := time.Now()
+				calls := 0
+				commandError := connectionError(tc.detail)
+				err := c.retry(ctx, remote, func(context.Context) error {
+					calls++
+					return commandError
+				})
+				want := tc.want
+				if want == nil {
+					want = commandError
+				}
+				if !errors.Is(err, want) || calls != tc.calls {
+					t.Fatalf("calls=%d, want %d; err=%v, want %v", calls, tc.calls, err, want)
+				}
+				if tc.budget > 0 && time.Since(start) >= tc.budget {
+					t.Fatalf("elapsed %s exceeded retry budget %s", time.Since(start), tc.budget)
+				}
+			})
+		})
+	}
 }
 
 func TestConnectFailureClassification(t *testing.T) {
@@ -340,9 +427,9 @@ func TestConnectRetryRespectsOperationTimeoutAndCancellation(t *testing.T) {
 	}
 }
 
-func TestSetConnectRetryDisabled(t *testing.T) {
+func TestSetRetryBudgetsDisabled(t *testing.T) {
 	c := connectClient(time.Hour)
-	c.SetConnectRetry(0)
+	c.SetRetryBudgets(0, 0)
 	if c.connect != nil {
 		t.Fatal("zero budget must disable connect retries")
 	}
@@ -370,7 +457,7 @@ exit 255
 	t.Setenv("GIT_SSH_COMMAND", ssh)
 	t.Setenv("SSH_LOG", log)
 	c := newClient(t)
-	c.SetConnectRetry(time.Minute)
+	c.SetRetryBudgets(time.Minute, 0)
 	repo := filepath.Join(dir, "repo.git")
 	testutil.Git(t, dir, "init", "--bare", repo)
 	err := c.Fetch(t.Context(), repo, "git@git.example:owner/repo.git")

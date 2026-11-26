@@ -19,8 +19,9 @@ import (
 )
 
 type Client struct {
-	runner  *Runner
-	connect *connectTracker
+	runner         *Runner
+	connect        *connectTracker
+	transientRetry time.Duration
 }
 
 type Changes struct {
